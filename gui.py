@@ -43,11 +43,16 @@ CONFIG_PATH = os.path.join(BASE_DIR, 'gui_config.json')
 THUMB_PX = 104     # thumbnail size in the clone picker gallery
 PREVIEW_PX = 150   # size of the preview next to the file field
 
-TEMPLATES = {
-  'combination_lock': 'Combination Lock (n x n)',
-  'cl_corner_bite': 'Corner Bite (n x n, corner revealed)',
-  'holey': 'Holey (size n gives (2n+1) x (2n+1))',
-  'clone': 'Clone (reuse the shape of an existing .puz level)',
+# Grid-based templates shown at the top of the picker. Each maps the internal
+# generator name to (display label, size hint, template-image file name). The
+# image files live in render.TEMPLATE_IMG_DIR ('Template Images'). 'clone' is
+# not listed here: it is chosen by picking one of the bonus levels below the
+# separator in the picker (each reuses that level's shape). 'l_shape_grid' is
+# left out on purpose - writer.py cannot emit it yet (see templater.render_template).
+GRID_TEMPLATES = {
+  'combination_lock': ('Combination Lock', 'n x n grid', 'Combination Lock.png'),
+  'cl_corner_bite': ('CL Corner Bite', 'n x n grid, one corner revealed', 'CL Corner Bite.png'),
+  'holey': ('Holey', 'size n gives a (2n+1) x (2n+1) grid', 'Holey.png'),
 }
 
 # Example line printed by the generator:  Best of round 3: ....*..*?... with score 18 and steps TETE
@@ -265,9 +270,10 @@ class App:
     self.game_dir_var = tk.StringVar(value=config.get('game_dir') or guess_game_dir())
     self.copy_var = tk.BooleanVar(value=config.get('copy', True))
     self.status_var = tk.StringVar(value='Ready.')
+    self.choice_var = tk.StringVar(value='')  # label of the current selection
 
-    # Clone picker state
-    self._thumb_cache = {}    # name -> PhotoImage for the gallery (kept to avoid GC)
+    # Picker state
+    self._thumb_cache = {}    # png path -> PhotoImage for the gallery (kept to avoid GC)
     self._preview_image = None
     self._picker = None       # the open gallery window, if any
 
@@ -282,54 +288,39 @@ class App:
 
     settings = ttk.LabelFrame(main, text='Settings', padding=8)
     settings.pack(fill='x')
-    settings.columnconfigure(1, weight=1)
+    settings.columnconfigure(3, weight=1)
 
-    ttk.Label(settings, text='Template:').grid(row=0, column=0, sticky='w', **pad)
-    self.template_box = ttk.Combobox(
-      settings, state='readonly', values=list(TEMPLATES), textvariable=self.template_var, width=22)
-    self.template_box.grid(row=0, column=1, sticky='w', **pad)
-    self.template_hint = ttk.Label(settings, text='')
-    self.template_hint.grid(row=0, column=2, columnspan=3, sticky='w', **pad)
-    self.template_box.bind('<<ComboboxSelected>>', lambda _e: self.update_hint())
+    # The level/template is chosen in a visual picker (templates at the top, then
+    # a separator, then the Tametsi bonus levels) instead of a dropdown.
+    ttk.Label(settings, text='Level / template:').grid(row=0, column=0, sticky='w', **pad)
+    self.choose_button = ttk.Button(settings, text='Choose…', command=self.open_picker)
+    self.choose_button.grid(row=0, column=1, sticky='w', **pad)
+    self.browse_button = ttk.Button(settings, text='Browse file…', command=self.browse_file)
+    self.browse_button.grid(row=0, column=2, sticky='w', **pad)
+    self.choice_label = ttk.Label(settings, textvariable=self.choice_var)
+    self.choice_label.grid(row=0, column=3, sticky='w', **pad)
 
     ttk.Label(settings, text='Size:').grid(row=1, column=0, sticky='w', **pad)
     self.size_spin = ttk.Spinbox(settings, from_=2, to=30, textvariable=self.size_var, width=6)
     self.size_spin.grid(row=1, column=1, sticky='w', **pad)
     ttk.Label(settings, text='Large grids (about 10 and up) get very slow.').grid(
-      row=1, column=2, columnspan=3, sticky='w', **pad)
+      row=1, column=2, columnspan=2, sticky='w', **pad)
 
     ttk.Label(settings, text='Time limit (min):').grid(row=2, column=0, sticky='w', **pad)
     self.minutes_spin = ttk.Spinbox(settings, from_=0, to=600, textvariable=self.minutes_var, width=6)
     self.minutes_spin.grid(row=2, column=1, sticky='w', **pad)
     ttk.Label(settings, text='0 = no limit, stop manually.').grid(
-      row=2, column=2, columnspan=3, sticky='w', **pad)
+      row=2, column=2, columnspan=2, sticky='w', **pad)
 
     ttk.Label(settings, text='Target score:').grid(row=3, column=0, sticky='w', **pad)
     self.target_spin = ttk.Spinbox(settings, from_=0, to=100000, textvariable=self.target_var, width=6)
     self.target_spin.grid(row=3, column=1, sticky='w', **pad)
     ttk.Label(settings, text='Stops automatically once this score is reached (0 = off).').grid(
-      row=3, column=2, columnspan=3, sticky='w', **pad)
+      row=3, column=2, columnspan=2, sticky='w', **pad)
 
-    ttk.Label(settings, text='Template file:').grid(row=4, column=0, sticky='w', **pad)
-    self.file_entry = ttk.Entry(settings, textvariable=self.file_var)
-    self.file_entry.grid(row=4, column=1, columnspan=3, sticky='ew', **pad)
-    self.file_entry.bind('<Return>', lambda _e: self.update_preview())
-    self.file_entry.bind('<FocusOut>', lambda _e: self.update_preview())
-    self.file_button = ttk.Button(settings, text='Browse…', command=self.browse_file)
-    self.file_button.grid(row=4, column=4, **pad)
-
-    # Clone: pick a level from test/ with a visual gallery dropdown
-    # (in addition to the path field above).
-    self.clone_pick_label = ttk.Label(settings, text='From test/:')
-    self.clone_pick_label.grid(row=5, column=0, sticky='w', **pad)
-    self.clone_pick_button = ttk.Button(
-      settings, text='Choose a level…', command=self.open_clone_picker)
-    self.clone_pick_button.grid(row=5, column=1, sticky='w', **pad)
-    if not HAVE_RENDER:
-      self.clone_pick_button.configure(text='Install Pillow for the gallery', state='disabled')
-    # Preview of the currently chosen clone level, shown to the right.
-    self.clone_preview = ttk.Label(settings)
-    self.clone_preview.grid(row=4, column=5, rowspan=2, padx=8, pady=4)
+    # Preview of the current selection (template shape or clone level).
+    self.preview = ttk.Label(settings)
+    self.preview.grid(row=0, column=4, rowspan=4, padx=8, pady=4, sticky='n')
 
     game = ttk.LabelFrame(main, text='Tametsi', padding=8)
     game.pack(fill='x', pady=(8, 0))
@@ -387,15 +378,18 @@ class App:
 
   def update_hint(self):
     template = self.template_var.get()
-    self.template_hint.configure(text=TEMPLATES.get(template, ''))
 
-    # With 'clone' the file defines the shape, otherwise the size does
+    # With 'clone' the file defines the shape, otherwise the size does.
     clone = template == 'clone'
+    if clone:
+      path = self.file_var.get().strip().strip('"')
+      base = os.path.basename(path) if path else '(no file chosen)'
+      self.choice_var.set(f'Clone: {base}')
+    else:
+      info = GRID_TEMPLATES.get(template)
+      self.choice_var.set(f'{info[0]} — {info[1]}' if info else template)
+
     self.size_spin.configure(state='disabled' if clone else 'normal')
-    self.file_entry.configure(state='normal' if clone else 'disabled')
-    self.file_button.configure(state='normal' if clone else 'disabled')
-    if HAVE_RENDER:
-      self.clone_pick_button.configure(state='normal' if clone else 'disabled')
     self.update_preview()
 
   def log_line(self, text):
@@ -411,13 +405,12 @@ class App:
     state_run = 'disabled' if running else 'normal'
     self.start_button.configure(state=state_run)
     self.stop_button.configure(state='normal' if running else 'disabled')
-    self.template_box.configure(state='disabled' if running else 'readonly')
-    for widget in (self.size_spin, self.minutes_spin, self.target_spin, self.file_entry, self.file_button):
+    self.choose_button.configure(state=state_run)
+    self.browse_button.configure(state=state_run)
+    for widget in (self.size_spin, self.minutes_spin, self.target_spin):
       widget.configure(state=state_run)
-    if HAVE_RENDER:
-      self.clone_pick_button.configure(state=state_run)
     if not running:
-      self.update_hint()
+      self.update_hint()  # re-disables the size box again when a clone is selected
 
   def browse(self):
     folder = filedialog.askdirectory(title='Choose Tametsi folder', initialdir=self.game_dir_var.get() or None)
@@ -427,66 +420,80 @@ class App:
   def browse_file(self):
     start = puzzles_dir_of(self.game_dir_var.get())
     path = filedialog.askopenfilename(
-      title='Choose a level file as template',
+      title='Choose a .puz level file to clone',
       initialdir=start if start and os.path.isdir(start) else None,
       filetypes=[('Tametsi level', '*.puz'), ('All files', '*.*')])
     if path:
+      # Any browsed .puz file is cloned (its shape is reused).
+      self.template_var.set('clone')
       self.file_var.set(path)
-      self.update_preview()
+      self.update_hint()
 
-  # -- Clone picker / preview -------------------------------------------------
+  # -- Picker / preview -------------------------------------------------------
 
   def update_preview(self):
-    """Show a rendering of the currently chosen clone level next to the field."""
+    """Show a rendering of the current selection (template shape or clone level)."""
     if not HAVE_RENDER:
       return
-    path = self.file_var.get().strip().strip('"')
-    valid = (self.template_var.get() == 'clone' and path
-             and os.path.isfile(path) and path.lower().endswith('.puz'))
-    if not valid:
-      self.clone_preview.configure(image='')
+    img = None
+    try:
+      template = self.template_var.get()
+      if template == 'clone':
+        path = self.file_var.get().strip().strip('"')
+        if path and os.path.isfile(path) and path.lower().endswith('.puz'):
+          img = render.render_file(path, px=PREVIEW_PX)
+      else:
+        info = GRID_TEMPLATES.get(template)
+        if info:
+          png = os.path.join(render.TEMPLATE_IMG_DIR, info[2])
+          if os.path.isfile(png):
+            img = Image.open(png)
+            img.thumbnail((PREVIEW_PX, PREVIEW_PX), Image.LANCZOS)
+    except Exception:  # noqa: BLE001 - a bad/missing file just means no preview
+      img = None
+    if img is None:
+      self.preview.configure(image='')
       self._preview_image = None
       return
-    try:
-      img = render.render_file(path, px=PREVIEW_PX)
-      self._preview_image = ImageTk.PhotoImage(img)
-      self.clone_preview.configure(image=self._preview_image)
-    except Exception:  # noqa: BLE001 - a bad file just means no preview
-      self.clone_preview.configure(image='')
-      self._preview_image = None
+    self._preview_image = ImageTk.PhotoImage(img)
+    self.preview.configure(image=self._preview_image)
 
-  def _thumb(self, name, puz_path):
-    """Cached gallery thumbnail (PhotoImage) for a test puzzle."""
-    if name in self._thumb_cache:
-      return self._thumb_cache[name]
+  def _thumb(self, png_path):
+    """Cached gallery thumbnail (PhotoImage) for a pre-rendered PNG, or None."""
+    if png_path in self._thumb_cache:
+      return self._thumb_cache[png_path]
+    photo = None
     try:
-      png = render.ensure_render(name, puz_path)
-      img = Image.open(png)
-      img.thumbnail((THUMB_PX, THUMB_PX), Image.LANCZOS)
-      photo = ImageTk.PhotoImage(img)
-    except Exception:  # noqa: BLE001 - skip thumbnails that fail to render
+      if os.path.isfile(png_path):
+        img = Image.open(png_path)
+        img.thumbnail((THUMB_PX, THUMB_PX), Image.LANCZOS)
+        photo = ImageTk.PhotoImage(img)
+    except Exception:  # noqa: BLE001 - skip thumbnails that fail to load
       photo = None
-    self._thumb_cache[name] = photo
+    self._thumb_cache[png_path] = photo
     return photo
 
-  def open_clone_picker(self):
-    """A dropdown-style gallery of every test/ level with its rendering."""
+  def open_picker(self):
+    """A gallery of the board templates (top) and, below a separator, every
+    Tametsi bonus level. Picking a template selects it (size still applies);
+    picking a bonus level clones that level's shape."""
     if not HAVE_RENDER:
+      messagebox.showinfo(
+        'Pillow needed',
+        'The visual picker needs Pillow. Install it with "pip install Pillow",\n'
+        'or use "Browse file…" to clone a .puz file directly.')
       return
     if self._picker is not None and self._picker.winfo_exists():
       self._picker.lift()
       return
 
-    puzzles = render.list_test_puzzles()
-    if not puzzles:
-      messagebox.showinfo('No levels', 'No .puz files were found in the test/ folder.')
-      return
-
     win = tk.Toplevel(self.root)
     self._picker = win
-    win.title('Choose a level from test/')
+    # Build the window hidden, then show it already centered, so it never flashes
+    # at the top-left corner of the screen before being moved.
+    win.withdraw()
+    win.title('Choose a level or template')
     win.transient(self.root)
-    win.geometry('560x520')
     win.protocol('WM_DELETE_WINDOW', lambda: self._close_picker())
 
     canvas = tk.Canvas(win, borderwidth=0, highlightthickness=0)
@@ -509,25 +516,87 @@ class App:
     for i in range(columns):
       frame.columnconfigure(i, weight=1)
 
-    for index, (name, puz_path) in enumerate(puzzles):
-      cell = ttk.Frame(frame, padding=4)
-      cell.grid(row=index // columns, column=index % columns, sticky='n', padx=4, pady=6)
+    row = 0
 
-      photo = self._thumb(name, puz_path)
+    # Templates at the top.
+    row = self._picker_header(frame, row, 'Templates', columns)
+    template_cells = []
+    for name, (label, _hint, img_file) in GRID_TEMPLATES.items():
+      png = os.path.join(render.TEMPLATE_IMG_DIR, img_file)
+      template_cells.append(
+        (label, self._thumb(png), lambda n=name: self.select_template(n)))
+    row = self._picker_cells(frame, row, template_cells, columns)
+
+    # Separator, then the Tametsi bonus levels below it.
+    ttk.Separator(frame, orient='horizontal').grid(
+      row=row, column=0, columnspan=columns, sticky='ew', pady=10)
+    row += 1
+
+    row = self._picker_header(frame, row, 'Tametsi bonus levels (clone)', columns)
+    bonus = render.list_bonus_puzzles()
+    if not bonus:
+      ttk.Label(frame, text='No bonus levels were found.').grid(
+        row=row, column=0, columnspan=columns, pady=6)
+    else:
+      bonus_cells = []
+      for name, puz_path in bonus:
+        png = render.ensure_render(name, puz_path)
+        bonus_cells.append(
+          (name, self._thumb(png),
+           lambda n=name, p=puz_path: self.select_bonus(n, p)))
+      self._picker_cells(frame, row, bonus_cells, columns)
+
+    self._center_picker(win, 600, 560)
+    win.deiconify()  # now show it, already centered
+
+  def _center_picker(self, win, width, height):
+    """Place `win` centered over the main window, on whichever monitor it is on.
+
+    winfo_rootx/rooty are virtual-desktop coordinates, so they stay correct on a
+    secondary monitor (where they can be negative or large); we must not clamp
+    them to 0, which would snap the window back onto the primary screen.
+    """
+    self.root.update_idletasks()
+    x = self.root.winfo_rootx() + (self.root.winfo_width() - width) // 2
+    y = self.root.winfo_rooty() + (self.root.winfo_height() - height) // 2
+    win.geometry(f'{width}x{height}+{x}+{y}')
+
+  def _picker_header(self, frame, row, text, columns):
+    """Place a bold section header spanning all columns; return the next row."""
+    label = ttk.Label(frame, text=text, font=('TkDefaultFont', 11, 'bold'))
+    label.grid(row=row, column=0, columnspan=columns, sticky='w', padx=4, pady=(4, 2))
+    return row + 1
+
+  def _picker_cells(self, frame, start_row, cells, columns):
+    """Grid (label, photo, callback) cells; return the next free row."""
+    for index, (label, photo, callback) in enumerate(cells):
+      cell = ttk.Frame(frame, padding=4)
+      cell.grid(row=start_row + index // columns, column=index % columns,
+                sticky='n', padx=4, pady=6)
+
       img_label = ttk.Label(cell, image=photo if photo else '', cursor='hand2')
       img_label.image = photo  # keep a reference
       img_label.pack()
-      text_label = ttk.Label(cell, text=name, wraplength=THUMB_PX + 20,
+      text_label = ttk.Label(cell, text=label, wraplength=THUMB_PX + 20,
                              justify='center', cursor='hand2')
       text_label.pack()
 
       for widget in (img_label, text_label):
-        widget.bind('<Button-1>', lambda _e, n=name, p=puz_path: self.select_clone(n, p))
+        widget.bind('<Button-1>', lambda _e, cb=callback: cb())
 
-  def select_clone(self, name, puz_path):
+    rows = (len(cells) + columns - 1) // columns
+    return start_row + rows
+
+  def select_template(self, name):
+    self.template_var.set(name)
+    self.file_var.set('')
+    self.update_hint()
+    self._close_picker()
+
+  def select_bonus(self, name, puz_path):
+    self.template_var.set('clone')
     self.file_var.set(os.path.abspath(puz_path))
-    self.clone_pick_button.configure(text=name)
-    self.update_preview()
+    self.update_hint()
     self._close_picker()
 
   def _close_picker(self):

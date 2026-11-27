@@ -25,6 +25,7 @@ from loader import extract
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_DIR = os.path.join(BASE_DIR, 'test')
+BONUS_DIR = os.path.join(BASE_DIR, 'Tametsi Bonus puzzles')
 RENDER_DIR = os.path.join(BASE_DIR, 'Tametsi Bonus Puzzle Images')
 TEMPLATE_IMG_DIR = os.path.join(BASE_DIR, 'Template Images')
 
@@ -143,6 +144,18 @@ def list_test_puzzles():
     return []
   names = [f for f in os.listdir(TEST_DIR) if f.lower().endswith('.puz')]
   return [(os.path.splitext(f)[0], os.path.join(TEST_DIR, f)) for f in sorted(names)]
+
+
+def list_bonus_puzzles():
+  """Sorted list of (name, puz_path) for every .puz file in the bonus folder.
+
+  These are the curated 'Tametsi Bonus puzzles'. Their pre-rendered PNGs live in
+  RENDER_DIR ('Tametsi Bonus Puzzle Images'), i.e. render_path_for(name).
+  """
+  if not os.path.isdir(BONUS_DIR):
+    return []
+  names = [f for f in os.listdir(BONUS_DIR) if f.lower().endswith('.puz')]
+  return [(os.path.splitext(f)[0], os.path.join(BONUS_DIR, f)) for f in sorted(names)]
 
 
 def render_path_for(name):

@@ -426,7 +426,11 @@ def L_shape_grid(compressed, size, depth):
   for color in colors:
     constraints.append([sum(board[n][1] == '*' for n in color['ids']), color['ids']])
 
-  num = 3 * side_length ** 2 // 4
+  # Total number of cells, revealed ones included (like the other templates).
+  # The excluded corner is a (side/2 - 1) square, not side/2, so count the board
+  # directly instead of a closed-form guess - otherwise the generator sizes its
+  # candidate strings wrong and replace_cells() raises a KeyError.
+  num = len(board)
   board.sort(key=lambda c: c[0] in revealed)  # praise be to Python's stable sort
 
   if not compressed:
@@ -448,7 +452,7 @@ def L_shape_grid(compressed, size, depth):
       nodes=nodes,
       columns=columns,
       colors=colors,
-      scored=scored,
+      score=scored,
     )
 
 
@@ -536,6 +540,7 @@ def render_template(method, compressed, *args, **kwargs):
     combination_lock=combination_lock_render,
     cl_corner_bite=cl_corner_bite_render,
     holey=holey_render,
+    l_shape_grid=L_shape_grid,
     clone=clone,
   )
 

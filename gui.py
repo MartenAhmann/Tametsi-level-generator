@@ -47,13 +47,17 @@ PREVIEW_PX = 150   # size of the preview next to the file field
 # generator name to (display label, size hint, template-image file name). The
 # image files live in render.TEMPLATE_IMG_DIR ('Template Images'). 'clone' is
 # not listed here: it is chosen by picking one of the bonus levels below the
-# separator in the picker (each reuses that level's shape). 'l_shape_grid' is
-# left out on purpose - writer.py cannot emit it yet (see templater.render_template).
+# separator in the picker (each reuses that level's shape).
 GRID_TEMPLATES = {
   'combination_lock': ('Combination Lock', 'n x n grid', 'Combination Lock.png'),
   'cl_corner_bite': ('CL Corner Bite', 'n x n grid, one corner revealed', 'CL Corner Bite.png'),
   'holey': ('Holey', 'size n gives a (2n+1) x (2n+1) grid', 'Holey.png'),
+  'l_shape_grid': ('L-Shape Grid', 'recursive L shape, uses size + depth', 'L-Shape Grid.png'),
 }
+
+# Templates that take a second 'depth' argument in addition to the size. For all
+# others the depth box stays hidden and only the size is passed through.
+DEPTH_TEMPLATES = {'l_shape_grid'}
 
 # Example line printed by the generator:  Best of round 3: ....*..*?... with score 18 and steps TETE
 BEST_RE = re.compile(r'Best of round (\d+): (\S+) with score (-?[\d.]+)')
@@ -107,17 +111,21 @@ def kill_process_tree(proc):
 class GeneratorRunner:
   """Starts generator.py as a subprocess and reports its output through a queue."""
 
-  def __init__(self, template, size, events):
+  def __init__(self, template, size, events, depth=None):
     self.template = template
     self.size = size  # grid size, or the template file path for 'clone'
+    self.depth = depth  # extra arg for templates that need one (e.g. l_shape_grid)
     self.events = events
     self.proc = None
     self.stopped = False
 
   def start(self):
     env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')
+    cmd = [sys.executable, '-u', 'generator.py', self.template, 'seqnum', str(self.size)]
+    if self.depth is not None:
+      cmd.append(str(self.depth))
     self.proc = subprocess.Popen(
-      [sys.executable, '-u', 'generator.py', self.template, 'seqnum', str(self.size)],
+      cmd,
       cwd=BASE_DIR,
       stdout=subprocess.PIPE,
       stderr=subprocess.STDOUT,
@@ -152,7 +160,7 @@ class GeneratorRunner:
 _last_write = 0.0
 
 
-def write_puzzle(template, pattern, size):
+def write_puzzle(template, pattern, size, depth=None):
   """Calls writer.py and returns the path of the generated .puz file."""
   global _last_write
 
@@ -161,8 +169,11 @@ def write_puzzle(template, pattern, size):
   if wait > 0:
     time.sleep(wait)
 
+  cmd = [sys.executable, 'writer.py', template, pattern, str(size)]
+  if depth is not None:
+    cmd.append(str(depth))
   proc = subprocess.run(
-    [sys.executable, 'writer.py', template, pattern, str(size)],
+    cmd,
     cwd=BASE_DIR,
     capture_output=True,
     text=True,
@@ -253,7 +264,7 @@ class App:
 
     self.events = queue.Queue()
     self.runner = None
-    self.run_info = None  # (template, size or file) of the current/last run
+    self.run_info = None  # (template, size or file, depth or None) of the current/last run
     self.results = []  # dicts with round, pattern, score
     self.started_at = 0.0
     self.limit_seconds = 0
@@ -264,6 +275,7 @@ class App:
 
     self.template_var = tk.StringVar(value=config.get('template', 'combination_lock'))
     self.size_var = tk.IntVar(value=config.get('size', 2))
+    self.depth_var = tk.IntVar(value=config.get('depth', 1))
     self.file_var = tk.StringVar(value=config.get('clone_file', ''))
     self.minutes_var = tk.IntVar(value=config.get('minutes', 0))
     self.target_var = tk.IntVar(value=config.get('target', 0))
@@ -301,8 +313,13 @@ class App:
     ttk.Label(settings, text='Size:').grid(row=1, column=0, sticky='w', **pad)
     self.size_spin = ttk.Spinbox(settings, from_=2, to=30, textvariable=self.size_var, width=6)
     self.size_spin.grid(row=1, column=1, sticky='w', **pad)
-    ttk.Label(settings, text='Large grids get very slow.').grid(
-      row=1, column=2, columnspan=2, sticky='w', **pad)
+    # The size hint and the depth control share row 1, columns 2-3: update_hint()
+    # shows the depth box only for templates in DEPTH_TEMPLATES and the hint
+    # otherwise, so the two never overlap.
+    self.size_hint_label = ttk.Label(settings, text='Large grids get very slow.')
+    self.size_hint_label.grid(row=1, column=2, columnspan=2, sticky='w', **pad)
+    self.depth_label = ttk.Label(settings, text='Depth:')
+    self.depth_spin = ttk.Spinbox(settings, from_=1, to=6, textvariable=self.depth_var, width=6)
 
     ttk.Label(settings, text='Time limit (min):').grid(row=2, column=0, sticky='w', **pad)
     self.minutes_spin = ttk.Spinbox(settings, from_=0, to=600, textvariable=self.minutes_var, width=6)
@@ -388,6 +405,19 @@ class App:
       self.choice_var.set(f'{info[0]} — {info[1]}' if info else template)
 
     self.size_spin.configure(state='disabled' if clone else 'normal')
+
+    # Show the depth box (in place of the size hint) only for templates that
+    # take a depth argument, and only when we are not cloning.
+    wants_depth = not clone and template in DEPTH_TEMPLATES
+    if wants_depth:
+      self.size_hint_label.grid_remove()
+      self.depth_label.grid(row=1, column=2, sticky='e', padx=8, pady=4)
+      self.depth_spin.grid(row=1, column=3, sticky='w', padx=8, pady=4)
+    else:
+      self.depth_label.grid_remove()
+      self.depth_spin.grid_remove()
+      self.size_hint_label.grid()
+
     self.update_preview()
 
   def log_line(self, text):
@@ -404,7 +434,7 @@ class App:
     self.start_button.configure(state=state_run)
     self.stop_button.configure(state='normal' if running else 'disabled')
     self.choose_button.configure(state=state_run)
-    for widget in (self.size_spin, self.minutes_spin, self.target_spin):
+    for widget in (self.size_spin, self.depth_spin, self.minutes_spin, self.target_spin):
       widget.configure(state=state_run)
     if not running:
       self.update_hint()  # re-disables the size box again when a clone is selected
@@ -595,6 +625,7 @@ class App:
     save_config(dict(
       template=self.template_var.get(),
       size=self._int(self.size_var, 5),
+      depth=self._int(self.depth_var, 1),
       clone_file=self.file_var.get(),
       minutes=self._int(self.minutes_var, 0),
       target=self._int(self.target_var, 0),
@@ -644,17 +675,22 @@ class App:
         messagebox.showerror('Invalid size', 'Please enter a size of at least 2.')
         return
 
+    # Templates in DEPTH_TEMPLATES take a second argument; 'clone' never does.
+    depth = None
+    if template != 'clone' and template in DEPTH_TEMPLATES:
+      depth = max(1, self._int(self.depth_var, 1))
+
     self.limit_seconds = max(0, self._int(self.minutes_var, 0)) * 60
     self.target_score = max(0, self._int(self.target_var, 0))
     self.save_settings()
 
     self.results = []
     self.refresh_tree()
-    self.run_info = (template, size)
+    self.run_info = (template, size, depth)
     self.stop_reason = ''
     self.started_at = time.time()
 
-    self.runner = GeneratorRunner(template, size, self.events)
+    self.runner = GeneratorRunner(template, size, self.events, depth)
     try:
       self.runner.start()
     except OSError as error:
@@ -662,7 +698,8 @@ class App:
       self.runner = None
       return
 
-    self.log_line(f'--- Start: {template}, {size} ---')
+    start_desc = f'{template}, {size}' + (f', depth {depth}' if depth is not None else '')
+    self.log_line(f'--- Start: {start_desc} ---')
     self.set_running(True)
     self.status_var.set('Running…')
 
@@ -680,7 +717,7 @@ class App:
       return
 
     result = self.results[int(selection[0])]
-    template, size = self.run_info
+    template, size, depth = self.run_info
     copy = self.copy_var.get()
     game_dir = self.game_dir_var.get().strip()
     if copy and not game_dir:
@@ -692,13 +729,13 @@ class App:
     self.status_var.set('Creating level…')
     threading.Thread(
       target=self._write_worker,
-      args=(template, result['pattern'], size, game_dir if copy else None),
+      args=(template, result['pattern'], size, depth, game_dir if copy else None),
       daemon=True,
     ).start()
 
-  def _write_worker(self, template, pattern, size, game_dir):
+  def _write_worker(self, template, pattern, size, depth, game_dir):
     try:
-      path = write_puzzle(template, pattern, size)
+      path = write_puzzle(template, pattern, size, depth)
       dest = copy_to_game(path, game_dir) if game_dir else None
       self.events.put(('written', path, dest))
     except Exception as error:  # noqa: BLE001 - errors should show up in the window

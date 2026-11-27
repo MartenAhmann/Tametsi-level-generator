@@ -39,8 +39,8 @@ python tester.py 94 --verbose   # one puzzle by its test/index id, with full sol
 python gui.py
 
 # Render: draw a .puz level's board shape (real tile polygons + color regions,
-# no text) to a PNG. No args renders every test/*.puz into test_renders/.
-python render.py                         # all of test/ -> test_renders/
+# no text) to a PNG. No args renders every test/*.puz into "Tametsi Bonus Puzzle Images/".
+python render.py                         # all of test/ -> "Tametsi Bonus Puzzle Images/"
 python render.py test/D20.puz out.png    # a single file
 
 # Visualize a solve in the browser: writes visualizer_data.js, then open visualizer.html
@@ -120,10 +120,11 @@ the full board, inserting `.` for revealed cells.
   `<POLY><POINTS>` offset by `<POS>`), colored by its color-hint group (neutral
   if none, dimmed if pre-revealed); no text or hint numbers are drawn — only the
   shape + colors, which is exactly what `clone` reuses. Uses Pillow, supersampled
-  then downscaled for smooth edges. `render_all()` writes `test_renders/<name>.png`
-  for every `test/*.puz`; `ensure_render` caches by mtime. The GUI imports this
-  module for its clone gallery thumbnails and preview. `test_renders/` is a
-  regenerable cache (gitignored) — run `python render.py` to rebuild it.
+  then downscaled for smooth edges. `render_all()` writes
+  `Tametsi Bonus Puzzle Images/<name>.png` for every `test/*.puz`; `ensure_render`
+  caches by mtime. The GUI imports this module for its clone gallery thumbnails and
+  preview. `Tametsi Bonus Puzzle Images/` is checked into the repo — run
+  `python render.py` to rebuild it.
 
 ## Conventions
 
@@ -134,8 +135,9 @@ the full board, inserting `.` for revealed cells.
 - The `.puz` XML format is documented field-by-field in `puzzle_format.md`; read
   it before touching `leveltemplate.xml` or the loader/writer.
 - The repo **is** a git repository. Generated/user-local files are gitignored:
-  `test_renders/`, `puzzles/`, `latest.puz`, `gui_config.json`,
-  `visualizer_data.js`, `*.soln`, and the `game_puzzles` symlink.
+  `puzzles/`, `latest.puz`, `gui_config.json`, `visualizer_data.js`, `*.soln`,
+  and the `game_puzzles` symlink.
 - `test/`, `puzzles/`, `published/`, and `game_puzzles/` (a symlink to Tametsi's
-  install dir) hold `.puz` data, not code. `test_renders/` holds generated PNG
-  previews of the `test/` levels (see `render.py`).
+  install dir) hold `.puz` data, not code. `Tametsi Bonus Puzzle Images/` holds
+  generated PNG previews of the `test/` levels (see `render.py`) and is checked
+  into the repo.

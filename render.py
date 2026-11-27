@@ -11,7 +11,7 @@ Used both as a command-line tool (render every test/*.puz) and by gui.py (to
 show a thumbnail of each level in the clone picker).
 
 Usage:
-  python render.py                 # render every test/*.puz into test_renders/
+  python render.py                 # render every test/*.puz into "Tametsi Bonus Puzzle Images/"
   python render.py path/to/file.puz [out.png]
 """
 
@@ -24,7 +24,7 @@ from loader import extract
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_DIR = os.path.join(BASE_DIR, 'test')
-RENDER_DIR = os.path.join(BASE_DIR, 'test_renders')
+RENDER_DIR = os.path.join(BASE_DIR, 'Tametsi Bonus Puzzle Images')
 
 # Background and tile colors (roughly matching Tametsi's palette).
 BACKGROUND = (30, 30, 40)

@@ -1,8 +1,6 @@
 puzzles
 
 # Tametsi generator: generated / user-local files
-# test_renders/: regenerable PNG previews (python render.py)
-test_renders/
 # latest.puz: written by writer.py on every run
 latest.puz
 # gui_config.json: per-user GUI settings

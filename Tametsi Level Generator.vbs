@@ -12,7 +12,7 @@ target = scriptDir & "\gui.py"
 
 If Not fso.FileExists(target) Then
   MsgBox "gui.py wurde nicht gefunden neben dieser Datei:" & vbCrLf & target, _
-         vbCritical, "Tametsi GUI"
+         vbCritical, "Tametsi Level Generator"
   WScript.Quit 1
 End If
 
@@ -29,7 +29,7 @@ If Err.Number <> 0 Then
   If Err.Number <> 0 Then
     MsgBox "Python (pythonw) konnte nicht gestartet werden." & vbCrLf & _
            "Bitte Python installieren oder zum PATH hinzufuegen.", _
-           vbCritical, "Tametsi GUI"
+           vbCritical, "Tametsi Level Generator"
   End If
 End If
 On Error Goto 0

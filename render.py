@@ -12,6 +12,7 @@ show a thumbnail of each level in the clone picker).
 
 Usage:
   python render.py                 # render every test/*.puz into "Tametsi Bonus Puzzle Images/"
+  python render.py --templates     # render each board template into "Template Images/"
   python render.py path/to/file.puz [out.png]
 """
 
@@ -25,6 +26,7 @@ from loader import extract
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_DIR = os.path.join(BASE_DIR, 'test')
 RENDER_DIR = os.path.join(BASE_DIR, 'Tametsi Bonus Puzzle Images')
+TEMPLATE_IMG_DIR = os.path.join(BASE_DIR, 'Template Images')
 
 # Background and tile colors (roughly matching Tametsi's palette).
 BACKGROUND = (30, 30, 40)
@@ -46,8 +48,9 @@ SUPERSAMPLE = 3  # draw big, then shrink down for smooth (anti-aliased) edges
 
 
 def _floats(value):
-  # extract() returns <POS> already split into a list, but <POINTS> as a string
-  parts = value if isinstance(value, list) else value.split(',')
+  # extract() returns <POS> already split into a list, but <POINTS> as a string.
+  # Template render functions (templater.py) hand positions over as tuples.
+  parts = value if isinstance(value, (list, tuple)) else value.split(',')
   return [float(p) for p in parts if p != '']
 
 
@@ -90,7 +93,12 @@ def build_polygons(data):
 
 def render_contents(contents, px=512):
   """Render puzzle file contents to a square PIL.Image of side `px`."""
-  data = extract(contents)
+  return render_data(extract(contents), px=px)
+
+
+def render_data(data, px=512):
+  """Render already-parsed node/color data (as from extract() or a template
+  render function) to a square PIL.Image of side `px`."""
   polygons, (min_x, min_y, max_x, max_y) = build_polygons(data)
 
   img = Image.new('RGB', (px, px), BACKGROUND)
@@ -167,8 +175,61 @@ def render_all(px=512):
   return len(puzzles)
 
 
+def _template_datas():
+  """(name, render-data) pairs for each board-shape template.
+
+  The mine layout does not affect the rendered shape - render.py draws only the
+  tiles and their color regions - so we hand each template render function an
+  all-'.' (no mines) layout purely to obtain its node geometry and color groups.
+  """
+  import templater  # local import: this pulls in the solver, only needed here
+
+  datas = []
+
+  # combination_lock: a plain size x size square grid.
+  size = 6
+  datas.append(('Combination Lock',
+                templater.combination_lock_render('.' * (size * size), size)))
+
+  # cl_corner_bite: the same square grid with one pre-revealed corner.
+  size = 6
+  datas.append(('CL Corner Bite',
+                templater.cl_corner_bite_render('.' * (size * size), size)))
+
+  # holey: a (2*size+1) square grid with a regular pattern of revealed holes.
+  size = 3
+  grid = 2 * size + 1
+  datas.append(('Holey',
+                templater.holey_render('.' * (grid * grid), size)))
+
+  # l_shape_grid: a recursive L shape with four color regions.
+  size, depth = 2, 2
+  template = templater.L_shape_grid(None, size, depth)
+  unrevealed = len(template['board']) - len(template['revealed'])
+  datas.append(('L-Shape Grid',
+                templater.L_shape_grid('.' * unrevealed, size, depth)))
+
+  return datas
+
+
+def render_templates(px=512):
+  os.makedirs(TEMPLATE_IMG_DIR, exist_ok=True)
+  datas = _template_datas()
+  for name, data in datas:
+    out = os.path.join(TEMPLATE_IMG_DIR, name + '.png')
+    try:
+      render_data(data, px=px).save(out)
+      print('rendered', out)
+    except Exception as error:  # noqa: BLE001 - keep going, report the bad one
+      print('FAILED', name, '-', error)
+  return len(datas)
+
+
 def main():
-  if len(sys.argv) > 1:
+  if len(sys.argv) > 1 and sys.argv[1] == '--templates':
+    count = render_templates()
+    print(f'done: {count} templates -> {TEMPLATE_IMG_DIR}')
+  elif len(sys.argv) > 1:
     src = sys.argv[1]
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.splitext(src)[0] + '.png'
     render_file(src, out)

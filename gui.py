@@ -263,9 +263,9 @@ class App:
     config = load_config()
 
     self.template_var = tk.StringVar(value=config.get('template', 'combination_lock'))
-    self.size_var = tk.IntVar(value=config.get('size', 5))
+    self.size_var = tk.IntVar(value=config.get('size', 2))
     self.file_var = tk.StringVar(value=config.get('clone_file', ''))
-    self.minutes_var = tk.IntVar(value=config.get('minutes', 2))
+    self.minutes_var = tk.IntVar(value=config.get('minutes', 0))
     self.target_var = tk.IntVar(value=config.get('target', 0))
     self.game_dir_var = tk.StringVar(value=config.get('game_dir') or guess_game_dir())
     self.copy_var = tk.BooleanVar(value=config.get('copy', True))
@@ -292,18 +292,16 @@ class App:
 
     # The level/template is chosen in a visual picker (templates at the top, then
     # a separator, then the Tametsi bonus levels) instead of a dropdown.
-    ttk.Label(settings, text='Level / template:').grid(row=0, column=0, sticky='w', **pad)
+    ttk.Label(settings, text='Level template:').grid(row=0, column=0, sticky='w', **pad)
     self.choose_button = ttk.Button(settings, text='Choose…', command=self.open_picker)
     self.choose_button.grid(row=0, column=1, sticky='w', **pad)
-    self.browse_button = ttk.Button(settings, text='Browse file…', command=self.browse_file)
-    self.browse_button.grid(row=0, column=2, sticky='w', **pad)
     self.choice_label = ttk.Label(settings, textvariable=self.choice_var)
-    self.choice_label.grid(row=0, column=3, sticky='w', **pad)
+    self.choice_label.grid(row=0, column=2, columnspan=2, sticky='w', **pad)
 
     ttk.Label(settings, text='Size:').grid(row=1, column=0, sticky='w', **pad)
     self.size_spin = ttk.Spinbox(settings, from_=2, to=30, textvariable=self.size_var, width=6)
     self.size_spin.grid(row=1, column=1, sticky='w', **pad)
-    ttk.Label(settings, text='Large grids (about 10 and up) get very slow.').grid(
+    ttk.Label(settings, text='Large grids get very slow.').grid(
       row=1, column=2, columnspan=2, sticky='w', **pad)
 
     ttk.Label(settings, text='Time limit (min):').grid(row=2, column=0, sticky='w', **pad)
@@ -341,7 +339,7 @@ class App:
     self.stop_button.pack(side='left', padx=(8, 0))
     ttk.Label(controls, textvariable=self.status_var).pack(side='left', padx=16)
 
-    results = ttk.LabelFrame(main, text='Levels found (best first, score above 0 only)', padding=8)
+    results = ttk.LabelFrame(main, text='Levels found (best first)', padding=8)
     results.pack(fill='both', expand=True, pady=(8, 0))
     results.columnconfigure(0, weight=1)
     results.rowconfigure(0, weight=1)
@@ -384,7 +382,7 @@ class App:
     if clone:
       path = self.file_var.get().strip().strip('"')
       base = os.path.basename(path) if path else '(no file chosen)'
-      self.choice_var.set(f'Clone: {base}')
+      self.choice_var.set(f'Level: {base}')
     else:
       info = GRID_TEMPLATES.get(template)
       self.choice_var.set(f'{info[0]} — {info[1]}' if info else template)
@@ -406,7 +404,6 @@ class App:
     self.start_button.configure(state=state_run)
     self.stop_button.configure(state='normal' if running else 'disabled')
     self.choose_button.configure(state=state_run)
-    self.browse_button.configure(state=state_run)
     for widget in (self.size_spin, self.minutes_spin, self.target_spin):
       widget.configure(state=state_run)
     if not running:
@@ -416,18 +413,6 @@ class App:
     folder = filedialog.askdirectory(title='Choose Tametsi folder', initialdir=self.game_dir_var.get() or None)
     if folder:
       self.game_dir_var.set(folder)
-
-  def browse_file(self):
-    start = puzzles_dir_of(self.game_dir_var.get())
-    path = filedialog.askopenfilename(
-      title='Choose a .puz level file to clone',
-      initialdir=start if start and os.path.isdir(start) else None,
-      filetypes=[('Tametsi level', '*.puz'), ('All files', '*.*')])
-    if path:
-      # Any browsed .puz file is cloned (its shape is reused).
-      self.template_var.set('clone')
-      self.file_var.set(path)
-      self.update_hint()
 
   # -- Picker / preview -------------------------------------------------------
 
@@ -480,8 +465,7 @@ class App:
     if not HAVE_RENDER:
       messagebox.showinfo(
         'Pillow needed',
-        'The visual picker needs Pillow. Install it with "pip install Pillow",\n'
-        'or use "Browse file…" to clone a .puz file directly.')
+        'The visual picker needs Pillow. Install it with "pip install Pillow".')
       return
     if self._picker is not None and self._picker.winfo_exists():
       self._picker.lift()
@@ -532,7 +516,7 @@ class App:
       row=row, column=0, columnspan=columns, sticky='ew', pady=10)
     row += 1
 
-    row = self._picker_header(frame, row, 'Tametsi bonus levels (clone)', columns)
+    row = self._picker_header(frame, row, 'Tametsi bonus levels', columns)
     bonus = render.list_bonus_puzzles()
     if not bonus:
       ttk.Label(frame, text='No bonus levels were found.').grid(

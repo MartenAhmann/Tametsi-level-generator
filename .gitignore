@@ -12,6 +12,11 @@ visualizer_data.js
 # game_puzzles: symlink into the local Tametsi install
 game_puzzles
 
+# Claude Code: assistant-specific / local files (kept out of the repo)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

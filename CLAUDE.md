@@ -41,6 +41,7 @@ python gui.py
 # Render: draw a .puz level's board shape (real tile polygons + color regions,
 # no text) to a PNG. No args renders every test/*.puz into "Tametsi Bonus Puzzle Images/".
 python render.py                         # all of test/ -> "Tametsi Bonus Puzzle Images/"
+python render.py --templates             # each board template -> "Template Images/"
 python render.py test/D20.puz out.png    # a single file
 
 # Visualize a solve in the browser: writes visualizer_data.js, then open visualizer.html
@@ -124,7 +125,20 @@ the full board, inserting `.` for revealed cells.
   `Tametsi Bonus Puzzle Images/<name>.png` for every `test/*.puz`; `ensure_render`
   caches by mtime. The GUI imports this module for its clone gallery thumbnails and
   preview. `Tametsi Bonus Puzzle Images/` is checked into the repo — run
-  `python render.py` to rebuild it.
+  `python render.py` to rebuild it. **Note:** `test/` now holds only `index.txt`
+  (the `.puz` files moved to `Tametsi Bonus puzzles/`), so `render.py` with no
+  args and `tester.py` currently find no puzzles there until `test/` is
+  repopulated; both still point at `test/` by design.
+  - `render_contents(contents)` just parses with `loader.extract` and calls
+    `render_data(data)`, which does the actual drawing from an already-parsed
+    `{nodes, colors}` dict. That lets `render_templates()` (CLI `--templates`)
+    draw the board-shape templates — it feeds each template's `_render` function
+    an all-`.` layout (mines don't affect the shape) to get its node geometry,
+    then writes `Template Images/<name>.png` for `combination_lock`,
+    `cl_corner_bite`, `holey`, and `l_shape_grid`. `clone` is skipped (it has no
+    fixed shape — it copies an input `.puz`). `Template Images/` is checked into
+    the repo. `_floats` accepts tuple positions because template `_render`
+    functions emit positions as tuples, not the lists `extract` returns.
 
 ## Conventions
 
@@ -137,7 +151,13 @@ the full board, inserting `.` for revealed cells.
 - The repo **is** a git repository. Generated/user-local files are gitignored:
   `puzzles/`, `latest.puz`, `gui_config.json`, `visualizer_data.js`, `*.soln`,
   and the `game_puzzles` symlink.
-- `test/`, `puzzles/`, `published/`, and `game_puzzles/` (a symlink to Tametsi's
-  install dir) hold `.puz` data, not code. `Tametsi Bonus Puzzle Images/` holds
-  generated PNG previews of the `test/` levels (see `render.py`) and is checked
-  into the repo.
+- `test/`, `puzzles/`, `published/`, `Tametsi Bonus puzzles/`, and `game_puzzles/`
+  (a symlink to Tametsi's install dir) hold `.puz` data, not code.
+  - `Tametsi Bonus puzzles/` is the curated set of bonus levels (the `.puz` files
+    that used to live in `test/`), checked into the repo.
+  - `test/` now holds only `index.txt` — a single comment line documenting the
+    `[id] [filename]` entry format (`#`-prefixed lines are comments that
+    `tester.py` skips). Add real entries (and the `.puz` files) here to use it.
+  - `Tametsi Bonus Puzzle Images/` holds generated PNG previews of the bonus
+    levels; `Template Images/` holds generated PNG previews of the board-shape
+    templates. Both are produced by `render.py` and checked into the repo.

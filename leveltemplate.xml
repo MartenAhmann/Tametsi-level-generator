@@ -1,0 +1,55 @@
+<PUZZLE>
+  <ID>YStarman{{ puzzle_id }}</ID>
+  <META>
+    <TILE_TEXT>{{ tile_text }}</TILE_TEXT>
+    <NEXT_PUZZLE_ID/>
+    <UNLOCKED_BY_AMOUNT>false</UNLOCKED_BY_AMOUNT>
+    <REQUIRE_ALL_UNLOCK_PUZZLES>true</REQUIRE_ALL_UNLOCK_PUZZLES>
+    <REQUIRE_PERFECT>false</REQUIRE_PERFECT>
+    <UNLOCK_PUZZLES>10</UNLOCK_PUZZLES>
+    <UNLOCK_AMOUNT>0</UNLOCK_AMOUNT>
+    <AUTHOR>El'endia Starman</AUTHOR>
+    <SCORE>{{ score }}</SCORE>
+  </META>
+  <TITLE>{{ title }}</TITLE>
+  <GRAPH>
+    {% for node in nodes %}
+    <NODE>
+      <ID>{{ node.id }}</ID>
+      <EDGES>{{ node.neighbors|join(',') }}</EDGES>
+      <POS>{{ node.position|join(',') }}</POS>
+      <POLY>
+        <POINTS>{{ node.points }}</POINTS>
+        <HIGHLIGHTS>0,1,2</HIGHLIGHTS>
+        <HIGHLIGHTS_TAPER_START>true</HIGHLIGHTS_TAPER_START>
+        <HIGHLIGHTS_TAPER_END>true</HIGHLIGHTS_TAPER_END>
+      </POLY>
+      {% if node.has_mine %}<HAS_MINE>true</HAS_MINE>{% endif %}
+      {% if node.secret %}<SECRET>true</SECRET>{% endif %}
+      {% if node.revealed %}<REVEALED>true</REVEALED>{% endif %}
+    </NODE>
+    {% endfor %}
+  </GRAPH>
+  <COLUMN_HINT_LIST>
+    {% for column in columns %}
+    <COLUMN_HINT>
+      <IDS>{{ column.ids|join(',') }}</IDS>
+      <TEXT_LOCATION>{{ column.text_location|join(',') }}</TEXT_LOCATION>
+      <TEXT_ROTATION>{{ column.text_rotation or 0.0}}</TEXT_ROTATION>
+      <TEXT_SIZE_FACTOR>{{ column.text_size_factor or 1.0}}</TEXT_SIZE_FACTOR>
+    </COLUMN_HINT>
+    {% endfor %}
+  </COLUMN_HINT_LIST>
+  <HINT_LIST>
+    {% for color in colors or [] %}
+    <HINT>
+      <IDS>{{ color.ids|join(',') }}</IDS>
+      <COLOR>{{ color.color }}</COLOR>
+      <IS_DARK>{{ color.is_dark }}</IS_DARK>
+    </HINT>
+    {% endfor %}
+  </HINT_LIST>
+  <TEXT/>
+  <TEXT_POS>0.0,0.0</TEXT_POS>
+  <CORNER_FLAG>{{ corner_flag or True}}</CORNER_FLAG>
+</PUZZLE>

@@ -399,6 +399,8 @@ class App:
     if clone:
       path = self.file_var.get().strip().strip('"')
       base = os.path.basename(path) if path else '(no file chosen)'
+      if base.lower().endswith('.puz'):
+        base = base[:-len('.puz')]
       self.choice_var.set(f'Level: {base}')
     else:
       info = GRID_TEMPLATES.get(template)
@@ -533,7 +535,7 @@ class App:
     row = 0
 
     # Templates at the top.
-    row = self._picker_header(frame, row, 'Templates', columns)
+    row = self._picker_header(frame, row, 'Templates (size adjustable)', columns)
     template_cells = []
     for name, (label, _hint, img_file) in GRID_TEMPLATES.items():
       png = os.path.join(render.TEMPLATE_IMG_DIR, img_file)

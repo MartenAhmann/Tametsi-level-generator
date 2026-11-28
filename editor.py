@@ -71,7 +71,10 @@ COLOR_TOOL_PREFIX = 'color:'
 class LevelEditor(tk.Toplevel):
   """A window to build and save one custom board shape."""
 
-  def __init__(self, master, on_saved=None, edit_name=None):
+  def __init__(self, master, on_saved=None, edit_name=None, center_over=None):
+    # `master` owns the window in the widget tree, so it must outlive the editor.
+    # `center_over` is only the window to center on (e.g. the picker, which may
+    # close itself while the editor is still saving); it defaults to `master`.
     super().__init__(master)
     self.title('Level Editor')
     self.on_saved = on_saved  # called as on_saved(name, json_path) after a save
@@ -110,6 +113,28 @@ class LevelEditor(tk.Toplevel):
 
     self.transient(master)
     self.minsize(GRID_COLS * CELL_PX // 2, 400)
+    self._center_over_parent(center_over if center_over is not None else master)
+
+  def _center_over_parent(self, parent):
+    """Open centered over `parent` (the picker, or the main window), not the
+    screen.
+
+    Uses the withdraw -> compute-from-parent -> deiconify dance so the window
+    never flashes in its default (top-left) spot first. Coordinates are not
+    clamped to >= 0 so this works on secondary monitors with negative origins.
+    """
+    self.withdraw()
+    self.update_idletasks()  # make the window's own requested size current
+    width = self.winfo_reqwidth()
+    height = self.winfo_reqheight()
+    try:
+      parent.update_idletasks()
+      px = parent.winfo_rootx() + (parent.winfo_width() - width) // 2
+      py = parent.winfo_rooty() + (parent.winfo_height() - height) // 2
+      self.geometry(f'+{px}+{py}')
+    except tk.TclError:
+      pass  # no usable parent geometry; fall back to the default position
+    self.deiconify()
 
   # -- Layout -----------------------------------------------------------------
 

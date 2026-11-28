@@ -82,7 +82,7 @@ class LevelEditor(tk.Toplevel):
     self._palette_entry(palette, 'Square tile', TOOL_PLACE, TILE,
                         'Place a tile on the clicked cell.')
     self._palette_entry(palette, 'Revealed start', TOOL_REVEAL, TILE_REVEALED,
-                        'Toggle whether a tile starts revealed.')
+                        'Mark a tile as starting revealed (erase to undo).')
     self._palette_entry(palette, 'Erase', TOOL_ERASE, BG,
                         'Remove the tile from the clicked cell.')
 
@@ -137,12 +137,15 @@ class LevelEditor(tk.Toplevel):
     if cell is None:
       return
     if tool == TOOL_PLACE:
-      self.cells.setdefault(cell, False)
+      # Place an unrevealed tile; painting over a revealed one resets it.
+      self.cells[cell] = False
     elif tool == TOOL_ERASE:
       self.cells.pop(cell, None)
     elif tool == TOOL_REVEAL:
+      # Reveal only ever marks a tile revealed; it never un-reveals, so clicking
+      # an already-revealed tile (or dragging over one) leaves it revealed.
       if cell in self.cells:
-        self.cells[cell] = not self.cells[cell]
+        self.cells[cell] = True
     self._redraw()
     self._update_status()
 
@@ -152,14 +155,10 @@ class LevelEditor(tk.Toplevel):
     self._apply(cell, self.tool.get())
 
   def _on_drag(self, event):
-    # Dragging paints with place/erase, but never repeat-toggles 'revealed'.
-    tool = self.tool.get()
-    if tool == TOOL_REVEAL:
-      return
     cell = self._cell_at(event)
     if cell is not None and cell != self._last_cell:
       self._last_cell = cell
-      self._apply(cell, tool)
+      self._apply(cell, self.tool.get())
 
   def _on_right(self, event):
     cell = self._cell_at(event)

@@ -557,10 +557,12 @@ class App:
 
     row = 0
 
-    # Custom section at the very top. The first cell is always the button that
-    # opens the level editor; any saved custom shapes follow (empty by default).
-    row = self._picker_header(frame, row, 'Custom', columns)
-    custom_cells = [('➕ Open level editor…', None, self.open_editor)]
+    # Custom section at the very top. The "Open level editor" button sits inline
+    # in the heading; any saved custom shapes follow below it (empty by default),
+    # so the first shape lines up under the heading like the other sections do.
+    row = self._picker_header(frame, row, 'Custom', columns,
+                              button=('➕ Open level editor…', self.open_editor))
+    custom_cells = []
     for name, json_path in custom_levels.list_shapes():
       thumb = None
       if previews:
@@ -623,10 +625,19 @@ class App:
     y = self.root.winfo_rooty() + (self.root.winfo_height() - height) // 2
     win.geometry(f'{width}x{height}+{x}+{y}')
 
-  def _picker_header(self, frame, row, text, columns):
-    """Place a bold section header spanning all columns; return the next row."""
-    label = ttk.Label(frame, text=text, font=('TkDefaultFont', 11, 'bold'))
-    label.grid(row=row, column=0, columnspan=columns, sticky='w', padx=4, pady=(4, 2))
+  def _picker_header(self, frame, row, text, columns, button=None):
+    """Place a bold section header spanning all columns; return the next row.
+
+    `button`, if given, is a (label, callback) pair shown inline to the right of
+    the heading text (used for the Custom section's "Open level editor" button),
+    so the section's first cell starts directly below the heading like the other
+    sections."""
+    header = ttk.Frame(frame)
+    header.grid(row=row, column=0, columnspan=columns, sticky='w', padx=4, pady=(4, 2))
+    ttk.Label(header, text=text, font=('TkDefaultFont', 11, 'bold')).pack(side='left')
+    if button is not None:
+      label, callback = button
+      ttk.Button(header, text=label, command=callback).pack(side='left', padx=(10, 0))
     return row + 1
 
   def _picker_cells(self, frame, start_row, cells, columns):

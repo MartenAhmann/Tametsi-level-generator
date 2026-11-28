@@ -20,6 +20,8 @@ import sys
 import threading
 import time
 
+import custom_levels
+
 try:
   import tkinter as tk
   from tkinter import ttk, filedialog, messagebox
@@ -62,6 +64,11 @@ GRID_TEMPLATES = {
 # Templates that take a second 'depth' argument in addition to the size. For all
 # others the depth box stays hidden and only the size is passed through.
 DEPTH_TEMPLATES = {'l_shape_grid'}
+
+# Templates whose "size" argument is actually a file path (the shape comes from a
+# file, not a grid size): 'clone' reuses a .puz, 'custom' a level-editor shape.
+# For these the size box is disabled and the file path is passed through instead.
+FILE_TEMPLATES = {'clone', 'custom'}
 
 # Example line printed by the generator:  Best of round 3: ....*..*?... with score 18 and steps TETE
 BEST_RE = re.compile(r'Best of round (\d+): (\S+) with score (-?[\d.]+)')
@@ -398,23 +405,30 @@ class App:
   def update_hint(self):
     template = self.template_var.get()
 
-    # With 'clone' the file defines the shape, otherwise the size does.
-    clone = template == 'clone'
-    if clone:
+    # For file-based templates ('clone', 'custom') the file defines the shape;
+    # otherwise the size does.
+    file_based = template in FILE_TEMPLATES
+    if template == 'clone':
       path = self.file_var.get().strip().strip('"')
       base = os.path.basename(path) if path else '(no file chosen)'
       if base.lower().endswith('.puz'):
         base = base[:-len('.puz')]
       self.choice_var.set(f'Level: {base}')
+    elif template == 'custom':
+      path = self.file_var.get().strip().strip('"')
+      base = os.path.basename(path) if path else '(no shape chosen)'
+      if base.lower().endswith('.json'):
+        base = base[:-len('.json')]
+      self.choice_var.set(f'Custom: {base}')
     else:
       info = GRID_TEMPLATES.get(template)
       self.choice_var.set(f'{info[0]} — {info[1]}' if info else template)
 
-    self.size_spin.configure(state='disabled' if clone else 'normal')
+    self.size_spin.configure(state='disabled' if file_based else 'normal')
 
     # Show the depth box (in place of the size hint) only for templates that
-    # take a depth argument, and only when we are not cloning.
-    wants_depth = not clone and template in DEPTH_TEMPLATES
+    # take a depth argument, and only when the shape is not file-based.
+    wants_depth = not file_based and template in DEPTH_TEMPLATES
     if wants_depth:
       self.size_hint_label.grid_remove()
       self.depth_label.grid(row=1, column=2, sticky='e', padx=8, pady=4)
@@ -463,6 +477,10 @@ class App:
         path = self.file_var.get().strip().strip('"')
         if path and os.path.isfile(path) and path.lower().endswith('.puz'):
           img = render.render_file(path, px=PREVIEW_PX)
+      elif template == 'custom':
+        path = self.file_var.get().strip().strip('"')
+        if path and os.path.isfile(path) and path.lower().endswith('.json'):
+          img = render.render_custom(path, px=PREVIEW_PX)
       else:
         info = GRID_TEMPLATES.get(template)
         if info:
@@ -495,14 +513,15 @@ class App:
     return photo
 
   def open_picker(self):
-    """A gallery of the board templates (top) and, below a separator, every
-    Tametsi bonus level. Picking a template selects it (size still applies);
-    picking a bonus level clones that level's shape."""
-    if not HAVE_RENDER:
-      messagebox.showinfo(
-        'Pillow needed',
-        'The visual picker needs Pillow. Install it with "pip install Pillow".')
-      return
+    """A gallery of: your Custom shapes (with a button to open the level editor),
+    then the board templates, then every Tametsi bonus level. Picking a template
+    selects it (size still applies); picking a bonus level or a custom shape
+    reuses that shape (the generator fills the mines).
+
+    Previews need Pillow; without it the picker still opens (so the editor stays
+    reachable) but shows plain text cells and hides the bonus levels (whose
+    listing lives in the render module)."""
+    previews = HAVE_RENDER
     if self._picker is not None and self._picker.winfo_exists():
       self._picker.lift()
       return
@@ -538,25 +557,48 @@ class App:
 
     row = 0
 
-    # Templates at the top.
+    # Custom section at the very top. The first cell is always the button that
+    # opens the level editor; any saved custom shapes follow (empty by default).
+    row = self._picker_header(frame, row, 'Custom', columns)
+    custom_cells = [('➕ Open level editor…', None, self.open_editor)]
+    for name, json_path in custom_levels.list_shapes():
+      thumb = None
+      if previews:
+        try:
+          thumb = self._thumb(render.ensure_custom_render(name, json_path))
+        except Exception:  # noqa: BLE001 - a bad shape just shows without a thumbnail
+          thumb = None
+      custom_cells.append(
+        (name, thumb, lambda n=name, p=json_path: self.select_custom(n, p)))
+    row = self._picker_cells(frame, row, custom_cells, columns)
+
+    ttk.Separator(frame, orient='horizontal').grid(
+      row=row, column=0, columnspan=columns, sticky='ew', pady=10)
+    row += 1
+
+    # Board templates.
     row = self._picker_header(frame, row, 'Templates (size adjustable)', columns)
     template_cells = []
     for name, (label, _hint, img_file) in GRID_TEMPLATES.items():
-      png = os.path.join(render.TEMPLATE_IMG_DIR, img_file)
+      thumb = None
+      if previews:
+        thumb = self._thumb(os.path.join(render.TEMPLATE_IMG_DIR, img_file))
       template_cells.append(
-        (label, self._thumb(png), lambda n=name: self.select_template(n)))
+        (label, thumb, lambda n=name: self.select_template(n)))
     row = self._picker_cells(frame, row, template_cells, columns)
 
-    # Separator, then the Tametsi bonus levels below it.
+    # Separator, then the Tametsi bonus levels below it (previews only - the
+    # listing lives in the render module, which needs Pillow to import).
     ttk.Separator(frame, orient='horizontal').grid(
       row=row, column=0, columnspan=columns, sticky='ew', pady=10)
     row += 1
 
     row = self._picker_header(frame, row, 'Tametsi bonus levels', columns)
-    bonus = render.list_bonus_puzzles()
+    bonus = render.list_bonus_puzzles() if previews else []
     if not bonus:
-      ttk.Label(frame, text='No bonus levels were found.').grid(
-        row=row, column=0, columnspan=columns, pady=6)
+      note = ('No bonus levels were found.' if previews
+              else 'Previews need Pillow ("pip install Pillow") - bonus levels hidden.')
+      ttk.Label(frame, text=note).grid(row=row, column=0, columnspan=columns, pady=6)
     else:
       bonus_cells = []
       for name, puz_path in bonus:
@@ -619,6 +661,27 @@ class App:
     self.update_hint()
     self._close_picker()
 
+  def select_custom(self, name, json_path):
+    self.template_var.set('custom')
+    self.file_var.set(os.path.abspath(json_path))
+    self.update_hint()
+    self._close_picker()
+
+  def open_editor(self):
+    """Open the level editor in its own window. Used by the picker's Custom button."""
+    self._close_picker()
+    try:
+      import editor
+    except Exception as error:  # noqa: BLE001 - surface an import problem in the window
+      messagebox.showerror('Editor unavailable', str(error))
+      return
+    editor.LevelEditor(self.root, on_saved=self._on_custom_saved)
+
+  def _on_custom_saved(self, name, json_path):
+    """After the editor saves a shape, select it as the current level."""
+    self._thumb_cache.pop(custom_levels.render_path_for(name), None)
+    self.select_custom(name, json_path)
+
   def _close_picker(self):
     if self._picker is not None:
       try:
@@ -668,11 +731,12 @@ class App:
   def on_start(self):
     template = self.template_var.get()
 
-    if template == 'clone':
-      # with 'clone' the file path replaces the size
+    if template in FILE_TEMPLATES:
+      # for file-based templates ('clone', 'custom') the file path replaces the size
       size = self.file_var.get().strip().strip('"')
       if not os.path.isfile(size):
-        messagebox.showerror('File missing', 'Please choose an existing .puz file as the template.')
+        what = 'custom shape' if template == 'custom' else '.puz file'
+        messagebox.showerror('File missing', f'Please choose an existing {what} first.')
         return
       size = os.path.abspath(size)
     else:
@@ -681,9 +745,9 @@ class App:
         messagebox.showerror('Invalid size', 'Please enter a size of at least 2.')
         return
 
-    # Templates in DEPTH_TEMPLATES take a second argument; 'clone' never does.
+    # Templates in DEPTH_TEMPLATES take a second argument; file-based ones never do.
     depth = None
-    if template != 'clone' and template in DEPTH_TEMPLATES:
+    if template not in FILE_TEMPLATES and template in DEPTH_TEMPLATES:
       depth = max(1, self._int(self.depth_var, 1))
 
     self.limit_seconds = max(0, self._int(self.minutes_var, 0)) * 60

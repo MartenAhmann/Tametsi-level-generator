@@ -1,7 +1,9 @@
+import os
 from functools import partial
 from solver import Puzzle
 from scorer import score
 from loader import load, extract
+import custom_levels
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +526,7 @@ def _simple_render(template, compressed, title_fmt, size, tile_text):
     remaining = iter(compressed)
     compressed = ''.join('.' if i in revealed else next(remaining) for i in range(num))
 
+  revealed_set = set(revealed)
   nodes = []
   for i in range(num):
     board[i][1] = compressed[i]
@@ -533,6 +536,7 @@ def _simple_render(template, compressed, title_fmt, size, tile_text):
       position=coords[i],
       has_mine=compressed[i] == '*',
       secret=compressed[i] == '?',
+      revealed=i in revealed_set,
       points=points if points is not None else points_of[i],
     ))
 
@@ -1016,6 +1020,72 @@ def clone(compressed, filename):
     )
 
 
+def custom(compressed, filename):
+  """A hand-built board shape from the level editor (see custom_levels.py).
+
+  Like `clone`, this is a single combined function: the make path (no compressed
+  string) returns the board geometry plus auto-derived, non-overlapping row/column
+  line hints so the generator can actually solve it, and the render path (a
+  compressed string given) fills the cells in, solves for the score and returns
+  the render fields. Only the SHAPE (plus which cells start revealed) is stored;
+  the generator alone places the mines.
+
+  v1 handles the square grid. The stored `shape` field is the extension point for
+  future tile shapes - add another geometry branch here and the rest of the
+  pipeline (generator, writer, picker) is unchanged.
+  """
+  shape = custom_levels.load_shape(filename)
+  tile_size = shape['tile_size']
+
+  cells = [(cell['x'], cell['y']) for cell in shape['cells']]
+  if not cells:
+    raise ValueError(f'custom shape has no cells: {filename}')
+  revealed_coords = {(c['x'], c['y']) for c in shape['cells'] if c['revealed']}
+
+  # Normalise to the origin; the absolute offset in the editor does not matter.
+  min_x = min(x for x, _ in cells)
+  min_y = min(y for _, y in cells)
+  keep_set = {(x - min_x, y - min_y) for x, y in cells}
+  rev_set = {(x - min_x, y - min_y) for x, y in revealed_coords}
+  side = max(max(x for x, _ in keep_set), max(y for _, y in keep_set)) + 1
+
+  # Reuse the masked-square-grid builder (8-way adjacency, square tiles, optional
+  # non-overlapping row/column line hints) that 'cross' and 'diamond' use.
+  id_of, board, coords, points, constraints, columns = _masked_square_grid(
+    lambda x, y: (x, y) in keep_set, side, tile_size)
+  num = len(id_of)
+  revealed = sorted(id_of[coord] for coord in rev_set)
+  colors = []
+
+  constraints.append([0, list(range(num))])  # total
+
+  if not compressed:
+    # sanity_check is optional for gradient_ascent; revealed cells are already
+    # kept out of the candidate string, so a trivial check is enough here.
+    def sanity_check(_compressed):
+      return True
+
+    return dict(
+      num=num,
+      board=board,
+      revealed=revealed,
+      constraints=constraints,
+      sanity_check=sanity_check,
+      coords=coords,
+      points=points,
+      columns=columns,
+      colors=colors,
+    )
+
+  # No ':' in the title - writer.py turns the title into a filename and a colon
+  # is illegal on Windows.
+  name = os.path.splitext(os.path.basename(filename))[0]
+  return _simple_render(
+    dict(num=num, board=board, revealed=revealed, constraints=constraints,
+         coords=coords, points=points, columns=columns, colors=colors),
+    compressed, 'Custom {size} with score {score}', name, 'CUS')
+
+
 def replace_cells(board, revealed, constraints, compressed):
   # compressed only describes the cells that are NOT revealed, in board order
   mapped = dict()
@@ -1041,6 +1111,7 @@ def replace_cells(board, revealed, constraints, compressed):
 register_template('l_shape_grid', partial(L_shape_grid, None), L_shape_grid,
                   label='L-Shape Grid', preview_args=(2, 2))
 register_template('clone', partial(clone, None), clone, label='Clone')
+register_template('custom', partial(custom, None), custom, label='Custom')
 
 
 def make_template(method, *args, **kwargs):

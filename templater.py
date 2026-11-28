@@ -552,6 +552,32 @@ def _simple_render(template, compressed, title_fmt, size, tile_text):
   )
 
 
+def _line_hint_collector():
+  """A deduplicating collector for optional line hints.
+
+  Returns (constraints, columns, place): `place(ids, location)` records a line
+  hint (a [0, ids] constraint plus a column at that text_location) unless an
+  earlier hint already claimed that spot, so two numbers are never stacked.
+  Shared by the masked-grid helper and the hexagon template - their geometries
+  differ, but the overlap-suppression bookkeeping is the same. Locations are
+  rounded so near-identical spots (hex float coords) collide; integer grid
+  coords are unaffected.
+  """
+  constraints = []
+  columns = []
+  used = set()
+
+  def place(ids, location):
+    key = (round(location[0], 1), round(location[1], 1))
+    if key in used:  # another line already put a number here
+      return
+    used.add(key)
+    constraints.append([0, ids])
+    columns.append(dict(ids=ids, text_location=location))
+
+  return constraints, columns, place
+
+
 def _grid_line_hints(id_of, tile_size):
   """Row and column line hints for a masked square grid, without overlaps.
 
@@ -567,16 +593,7 @@ def _grid_line_hints(id_of, tile_size):
   ys = [y for _x, y in id_of]
   width, height = max(xs) + 1, max(ys) + 1
 
-  constraints = []
-  columns = []
-  used = set()
-
-  def place(ids, location):
-    if location in used:  # another row/column already put a number here
-      return
-    used.add(location)
-    constraints.append([0, ids])
-    columns.append(dict(ids=ids, text_location=location))
+  constraints, columns, place = _line_hint_collector()
 
   for y in range(height):
     cells = [x for x in range(width) if (x, y) in id_of]
@@ -849,6 +866,106 @@ def diamond(size):
 def diamond_render(compressed, size):
   return _simple_render(diamond(size), compressed,
                         'Diamond {size} with score {score}', size, 'DIA')
+
+
+def hexagon(size):
+  """A big hexagon tiled with regular hexagons - the honeycomb look of Tametsi's
+  hex levels. `size` is the radius: all hexes within hex-distance `size` of the
+  center are kept, giving 3*size*(size+1)+1 cells. Adjacency is the 6-way hex
+  neighborhood (axial coordinates). Line hints run along all three hex axes (the
+  rows and the two diagonals), and concentric hexagonal rings are tinted in a few
+  colors - a honeycomb target in the spirit of the bonus levels."""
+  n = int(size)
+  R = 10.0           # hex circumradius (center to vertex)
+  shrink = 0.93      # inset so neighbors show a thin seam instead of touching
+  sqrt3 = 3 ** 0.5
+
+  # Axial coordinates (q, r); a cell is kept when its hex-distance from the
+  # center is <= n. Cube distance = (|q| + |r| + |q + r|) / 2.
+  dist = lambda q, r: (abs(q) + abs(r) + abs(q + r)) // 2
+  cells = [(q, r) for q in range(-n, n + 1) for r in range(-n, n + 1)
+           if dist(q, r) <= n]
+  cells.sort(key=lambda qr: (qr[1], qr[0]))  # row-major (by r, then q) -> ids 0..num-1
+  id_of = {qr: i for i, qr in enumerate(cells)}
+  num = len(id_of)
+
+  # Pointy-top hex: vertices top and bottom, flat edges left and right.
+  pixel = lambda q, r: (sqrt3 * R * (q + r / 2.0), 1.5 * R * r)
+  s = R * shrink
+  hx = sqrt3 / 2 * s
+  points = '{},{},{},{},{},{},{},{},{},{},{},{}'.format(
+    0, s, -hx, s / 2, -hx, -s / 2, 0, -s, hx, -s / 2, hx, s / 2)
+
+  board = [None] * num
+  coords = {}
+  directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
+  for (q, r), cid in id_of.items():
+    neighbors = []
+    for dq, dr in directions:
+      nb = id_of.get((q + dq, r + dr))
+      if nb is not None:  # id 0 is a real cell - don't drop it (0 is falsy)
+        neighbors.append(nb)
+    board[cid] = [cid, '', neighbors]
+    coords[cid] = pixel(q, r)
+
+  revealed = []
+  constraints, columns, place = _line_hint_collector()
+
+  # Three line families, one hint per line, placed just beyond one end *along the
+  # line* so the number always lands outside the board. Overlaps at shared corners
+  # are skipped by `place`, so no two numbers are ever stacked.
+  by_r, by_q, by_s = {}, {}, {}
+  for (q, r) in cells:
+    by_r.setdefault(r, []).append((q, r))
+    by_q.setdefault(q, []).append((q, r))
+    by_s.setdefault(q + r, []).append((q, r))
+
+  for group in sorted(by_r.values()):            # rows (constant r): left end
+    group.sort()
+    q0, r0 = group[0]
+    place([id_of[c] for c in group], pixel(q0 - 1, r0))
+  for group in sorted(by_q.values()):            # diagonal (constant q): top end
+    group.sort(key=lambda c: c[1])
+    q0, r0 = group[0]
+    place([id_of[c] for c in group], pixel(q0, r0 - 1))
+  for group in sorted(by_s.values()):            # diagonal (constant q+r): upper end
+    group.sort(key=lambda c: c[1])
+    q0, r0 = group[0]                             # min r on the line -> max q
+    place([id_of[c] for c in group], pixel(q0 + 1, r0 - 1))
+
+  # Concentric hexagonal rings, cycling through a few colors (like the diamond).
+  ring_colors = ['GREEN', 'BLUE', 'VIOLET']
+  groups = {}
+  for (q, r), cid in id_of.items():
+    groups.setdefault(ring_colors[dist(q, r) % len(ring_colors)], []).append(cid)
+  colors = []
+  for col in ring_colors:
+    if groups.get(col):
+      constraints.append([0, groups[col]])
+      colors.append(dict(ids=groups[col], color=col, is_dark=False))
+
+  constraints.append([0, list(range(num))])  # total
+
+  def sanity_check(compressed):  # takes a compressed string
+    return True
+
+  return dict(
+    num=num,
+    board=board,
+    revealed=revealed,
+    constraints=constraints,
+    sanity_check=sanity_check,
+    coords=coords,
+    points=points,
+    columns=columns,
+    colors=colors,
+  )
+
+
+@template('hexagon', label='Hexagon', preview_args=(3,))
+def hexagon_render(compressed, size):
+  return _simple_render(hexagon(size), compressed,
+                        'Hexagon {size} with score {score}', size, 'HEX')
 
 
 def clone(compressed, filename):

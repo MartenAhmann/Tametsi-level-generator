@@ -56,6 +56,7 @@ GRID_TEMPLATES = {
   'octagons': ('Octagons', 'n x n octagons with diamond connectors', 'Octagons.png'),
   'cross': ('Cross', 'plus shape, size n gives a 3n x 3n cross', 'Cross.png'),
   'diamond': ('Diamond', 'diamond of radius n ((2n+1) wide)', 'Diamond.png'),
+  'hexagon': ('Hexagon', 'honeycomb of radius n', 'Hexagon.png'),
 }
 
 # Templates that take a second 'depth' argument in addition to the size. For all

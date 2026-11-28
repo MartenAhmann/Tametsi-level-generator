@@ -53,6 +53,9 @@ GRID_TEMPLATES = {
   'cl_corner_bite': ('CL Corner Bite', 'n x n grid, one corner revealed', 'CL Corner Bite.png'),
   'holey': ('Holey', 'size n gives a (2n+1) x (2n+1) grid', 'Holey.png'),
   'l_shape_grid': ('L-Shape Grid', 'recursive L shape, uses size + depth', 'L-Shape Grid.png'),
+  'octagons': ('Octagons', 'n x n octagons with diamond connectors', 'Octagons.png'),
+  'cross': ('Cross', 'plus shape, size n gives a 3n x 3n cross', 'Cross.png'),
+  'diamond': ('Diamond', 'diamond of radius n ((2n+1) wide)', 'Diamond.png'),
 }
 
 # Templates that take a second 'depth' argument in addition to the size. For all

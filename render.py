@@ -217,38 +217,25 @@ def render_all(px=512):
 
 
 def _template_datas():
-  """(name, render-data) pairs for each board-shape template.
+  """(label, render-data) pairs for each board-shape template.
 
-  The mine layout does not affect the rendered shape - render.py draws only the
-  tiles and their color regions - so we hand each template render function an
-  all-'.' (no mines) layout purely to obtain its node geometry and color groups.
+  Auto-discovered from templater.TEMPLATES: every registered template that has a
+  fixed previewable shape (i.e. non-None preview_args) is drawn. The mine layout
+  does not affect the rendered shape - render.py draws only the tiles and their
+  color regions - so we hand each template an all-'.' (no mines) layout purely to
+  obtain its node geometry and color groups. 'clone' has no fixed shape (it
+  copies an input .puz) and declares no preview_args, so it is skipped.
   """
   import templater  # local import: this pulls in the solver, only needed here
 
   datas = []
-
-  # combination_lock: a plain size x size square grid.
-  size = 6
-  datas.append(('Combination Lock',
-                templater.combination_lock_render('.' * (size * size), size)))
-
-  # cl_corner_bite: the same square grid with one pre-revealed corner.
-  size = 6
-  datas.append(('CL Corner Bite',
-                templater.cl_corner_bite_render('.' * (size * size), size)))
-
-  # holey: a (2*size+1) square grid with a regular pattern of revealed holes.
-  size = 3
-  grid = 2 * size + 1
-  datas.append(('Holey',
-                templater.holey_render('.' * (grid * grid), size)))
-
-  # l_shape_grid: a recursive L shape with four color regions.
-  size, depth = 2, 2
-  template = templater.L_shape_grid(None, size, depth)
-  unrevealed = len(template['board']) - len(template['revealed'])
-  datas.append(('L-Shape Grid',
-                templater.L_shape_grid('.' * unrevealed, size, depth)))
+  for name, entry in templater.TEMPLATES.items():
+    args = entry['preview_args']
+    if args is None:
+      continue
+    num = templater.make_template(name, *args)['num']
+    data = templater.render_template(name, '.' * num, *args)
+    datas.append((entry['label'], data))
 
   return datas
 

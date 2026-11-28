@@ -104,7 +104,7 @@ class LevelEditor(tk.Toplevel):
     palette.pack(side='left', fill='y', padx=(0, 10))
 
     self._palette_entry(palette, 'Square tile', TOOL_PLACE, TILE,
-                        'Place a plain tile (clears any color on the cell).')
+                        'Place a tile on the clicked cell.')
     self._palette_entry(palette, 'Revealed start', TOOL_REVEAL, TILE_REVEALED,
                         'Mark a tile as starting revealed (right click to undo).')
 

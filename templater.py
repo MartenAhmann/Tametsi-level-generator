@@ -647,6 +647,70 @@ def _masked_square_grid(keep, side, tile_size=10):
   return id_of, board, coords, points, constraints, columns
 
 
+def _masked_hex_grid(keep_set, tile_size=10):
+  """Shared construction for a masked hexagonal grid (the custom hex editor).
+
+  `keep_set` is a set of axial (q, r) hex coordinates to keep. Ids are assigned
+  row-major (by r, then q) so they are stable. Returns (id_of, board, coords,
+  points, constraints, columns): the 6-way hex neighborhood among the kept cells,
+  a single pointy-top hexagon tile shape, and optional non-overlapping line hints
+  along all three hex axes (rows and the two diagonals). The caller adds its own
+  color groups and the board total to `constraints`. Mirrors the `hexagon`
+  template's geometry, but over an arbitrary hand-drawn set of cells instead of a
+  full hex disk.
+  """
+  R = float(tile_size)   # hex circumradius (center to vertex)
+  shrink = 0.93          # inset so neighbors show a thin seam instead of touching
+  sqrt3 = 3 ** 0.5
+
+  cells = sorted(keep_set, key=lambda qr: (qr[1], qr[0]))  # row-major -> ids 0..n-1
+  id_of = {qr: i for i, qr in enumerate(cells)}
+
+  # Pointy-top hex: vertices top and bottom, flat edges left and right.
+  pixel = lambda q, r: (sqrt3 * R * (q + r / 2.0), 1.5 * R * r)
+  s = R * shrink
+  hx = sqrt3 / 2 * s
+  points = '{},{},{},{},{},{},{},{},{},{},{},{}'.format(
+    0, s, -hx, s / 2, -hx, -s / 2, 0, -s, hx, -s / 2, hx, s / 2)
+
+  board = [None] * len(id_of)
+  coords = {}
+  directions = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
+  for (q, r), cid in id_of.items():
+    neighbors = []
+    for dq, dr in directions:
+      nb = id_of.get((q + dq, r + dr))
+      if nb is not None:  # id 0 is a real cell - don't drop it (0 is falsy)
+        neighbors.append(nb)
+    board[cid] = [cid, '', neighbors]
+    coords[cid] = pixel(q, r)
+
+  # Three line families (constant r, constant q, constant q+r), one hint per line,
+  # placed just beyond one end *along the line* so the number lands outside the
+  # board. `place` skips a spot already claimed by another line (shared corners),
+  # so no two numbers are ever stacked.
+  constraints, columns, place = _line_hint_collector()
+  by_r, by_q, by_s = {}, {}, {}
+  for (q, r) in cells:
+    by_r.setdefault(r, []).append((q, r))
+    by_q.setdefault(q, []).append((q, r))
+    by_s.setdefault(q + r, []).append((q, r))
+  for group in sorted(by_r.values()):            # rows (constant r): left end
+    group.sort()
+    q0, r0 = group[0]
+    place([id_of[c] for c in group], pixel(q0 - 1, r0))
+  for group in sorted(by_q.values()):            # diagonal (constant q): top end
+    group.sort(key=lambda c: c[1])
+    q0, r0 = group[0]
+    place([id_of[c] for c in group], pixel(q0, r0 - 1))
+  for group in sorted(by_s.values()):            # diagonal (constant q+r): upper end
+    group.sort(key=lambda c: c[1])
+    q0, r0 = group[0]                             # min r on the line -> max q
+    place([id_of[c] for c in group], pixel(q0 + 1, r0 - 1))
+
+  return id_of, board, coords, points, constraints, columns
+
+
 def octagons(size):
   """A size x size grid of octagons with small square 'connector' tiles filling
   the diagonal gaps - the truncated-square (4.8.8) tiling that is Tametsi's
@@ -1036,25 +1100,36 @@ def custom(compressed, filename):
   """
   shape = custom_levels.load_shape(filename)
   tile_size = shape['tile_size']
+  kind = shape.get('shape', 'square')
 
   cells = [(cell['x'], cell['y']) for cell in shape['cells']]
   if not cells:
     raise ValueError(f'custom shape has no cells: {filename}')
   revealed_coords = {(c['x'], c['y']) for c in shape['cells'] if c['revealed']}
 
-  # Normalise to the origin; the absolute offset in the editor does not matter.
-  min_x = min(x for x, _ in cells)
-  min_y = min(y for _, y in cells)
-  keep_set = {(x - min_x, y - min_y) for x, y in cells}
-  rev_set = {(x - min_x, y - min_y) for x, y in revealed_coords}
-  side = max(max(x for x, _ in keep_set), max(y for _, y in keep_set)) + 1
+  if kind == 'hexagon':
+    # Hexagonal grid: coordinates are axial (q, r); 6-way adjacency and pointy-top
+    # hex tiles. No origin shift is needed - the pixel mapping handles any (q, r).
+    keep_set = set(cells)
+    id_of, board, coords, points, constraints, columns = _masked_hex_grid(
+      keep_set, tile_size)
+    # Painted/revealed cells are addressed by their raw (q, r) in this branch.
+    norm = lambda cell: (cell['x'], cell['y'])
+  else:
+    # Square grid: normalise to the origin, then reuse the masked-square-grid
+    # builder (8-way adjacency, square tiles, optional row/column line hints)
+    # that 'cross' and 'diamond' use. The absolute editor offset does not matter.
+    min_x = min(x for x, _ in cells)
+    min_y = min(y for _, y in cells)
+    keep_set = {(x - min_x, y - min_y) for x, y in cells}
+    side = max(max(x for x, _ in keep_set), max(y for _, y in keep_set)) + 1
+    id_of, board, coords, points, constraints, columns = _masked_square_grid(
+      lambda x, y: (x, y) in keep_set, side, tile_size)
+    norm = lambda cell: (cell['x'] - min_x, cell['y'] - min_y)
 
-  # Reuse the masked-square-grid builder (8-way adjacency, square tiles, optional
-  # non-overlapping row/column line hints) that 'cross' and 'diamond' use.
-  id_of, board, coords, points, constraints, columns = _masked_square_grid(
-    lambda x, y: (x, y) in keep_set, side, tile_size)
   num = len(id_of)
-  revealed = sorted(id_of[coord] for coord in rev_set)
+  revealed = sorted(id_of[norm({'x': x, 'y': y})] for x, y in revealed_coords
+                    if norm({'x': x, 'y': y}) in id_of)
 
   # Color hints: group the editor's painted cells by color name, then turn each
   # group into a color region plus a placeholder count constraint. replace_cells
@@ -1065,7 +1140,7 @@ def custom(compressed, filename):
     name = cell.get('color')
     if not name:
       continue
-    coord = (cell['x'] - min_x, cell['y'] - min_y)
+    coord = norm(cell)
     if coord in id_of:
       color_groups.setdefault(str(name).upper(), []).append(id_of[coord])
   colors = []

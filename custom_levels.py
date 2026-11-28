@@ -48,18 +48,30 @@ def is_valid_name(name):
   return name.split('.')[0].upper() not in _RESERVED_NAMES
 
 
-def save_shape(name, cells, tile_size=DEFAULT_TILE_SIZE):
+# Tile shapes the editor can save. 'square' uses (x, y) grid coordinates with
+# 8-way adjacency; 'hexagon' stores axial hex coordinates in the same (x, y)
+# fields (x = q, y = r) with 6-way adjacency. The templater and renderer branch
+# on this field; anything else is treated as 'square' for backward compatibility.
+SHAPE_SQUARE = 'square'
+SHAPE_HEXAGON = 'hexagon'
+SHAPES = (SHAPE_SQUARE, SHAPE_HEXAGON)
+
+
+def save_shape(name, cells, tile_size=DEFAULT_TILE_SIZE, shape=SHAPE_SQUARE):
   """Write a custom shape to CUSTOM_DIR/<name>.json and return its path.
 
   `cells` is an iterable of (x, y, revealed[, color]) tuples: grid coordinates, a
   boolean, and an optional Tametsi color NAME (e.g. 'GREEN') or None for an
-  unpainted tile. Coordinates are stored as given; the template normalises them
-  to the origin when it builds the board, so the absolute offset does not matter.
-  The `color` field is optional, so files written without it stay readable by
-  older loaders (the schema version is unchanged).
+  unpainted tile. For `shape='hexagon'` the coordinates are axial hex (q, r)
+  stored in the same x/y fields. Coordinates are stored as given; the template
+  normalises them when it builds the board, so the absolute offset does not
+  matter. The `color` field is optional, so files written without it stay
+  readable by older loaders (the schema version is unchanged).
   """
   if not is_valid_name(name):
     raise ValueError(f'invalid custom level name: {name!r}')
+  if shape not in SHAPES:
+    raise ValueError(f'unknown tile shape: {shape!r}')
 
   os.makedirs(CUSTOM_DIR, exist_ok=True)
   out_cells = []
@@ -71,7 +83,7 @@ def save_shape(name, cells, tile_size=DEFAULT_TILE_SIZE):
       color=(str(color) if color else None)))
   data = dict(
     version=SCHEMA_VERSION,
-    shape='square',  # extension point: future tile shapes (hexagon, triangle, ...)
+    shape=shape,  # 'square' or 'hexagon' (extension point for triangle, ...)
     tile_size=int(tile_size),
     cells=out_cells,
   )

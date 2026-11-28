@@ -170,15 +170,28 @@ def custom_shape_data(shape):
   neutral fill. `shape` is a dict as returned by custom_levels.load_shape().
   """
   tile_size = shape.get('tile_size', custom_levels.DEFAULT_TILE_SIZE)
+  kind = shape.get('shape', 'square')
   cells = [(c['x'], c['y'], c.get('revealed', False), c.get('color'))
            for c in shape['cells']]
   if not cells:
     return dict(nodes=[], colors=[])
 
-  min_x = min(x for x, _y, _r, _c in cells)
-  min_y = min(y for _x, y, _r, _c in cells)
-  half = 0.96 * tile_size / 2
-  points = '-{s},-{s},{s},-{s},{s},{s},-{s},{s}'.format(s=half)
+  if kind == 'hexagon':
+    # Pointy-top hexagons from axial (q, r); mirrors _masked_hex_grid in
+    # templater.py (and render_data re-normalises the positions).
+    R = float(tile_size)
+    sqrt3 = 3 ** 0.5
+    s = R * 0.93
+    hxv = sqrt3 / 2 * s
+    points = '{},{},{},{},{},{},{},{},{},{},{},{}'.format(
+      0, s, -hxv, s / 2, -hxv, -s / 2, 0, -s, hxv, -s / 2, hxv, s / 2)
+    position_of = lambda q, r: (sqrt3 * R * (q + r / 2.0), 1.5 * R * r)
+  else:
+    min_x = min(x for x, _y, _r, _c in cells)
+    min_y = min(y for _x, y, _r, _c in cells)
+    half = 0.96 * tile_size / 2
+    points = '-{s},-{s},{s},-{s},{s},{s},-{s},{s}'.format(s=half)
+    position_of = lambda x, y: ((x - min_x) * tile_size, (y - min_y) * tile_size)
 
   nodes = []
   color_groups = {}
@@ -186,7 +199,7 @@ def custom_shape_data(shape):
     nodes.append(dict(
       id=index,
       neighbors=[],
-      position=((x - min_x) * tile_size, (y - min_y) * tile_size),
+      position=position_of(x, y),
       points=points,
       revealed=revealed,
     ))

@@ -732,14 +732,20 @@ class App:
 
   def open_editor(self, edit_name=None):
     """Open the level editor in its own window. Used by the picker's Custom button
-    and by the Edit entry of a custom shape's right-click menu (edit_name set)."""
-    self._close_picker()
+    and by the Edit entry of a custom shape's right-click menu (edit_name set).
+
+    The picker stays open behind the editor so the editor can center over it. The
+    editor is still owned by the main window (not the picker), because the save
+    flow closes the picker while the editor is finishing."""
     try:
       import editor
     except Exception as error:  # noqa: BLE001 - surface an import problem in the window
       messagebox.showerror('Editor unavailable', str(error))
       return
-    editor.LevelEditor(self.root, on_saved=self._on_custom_saved, edit_name=edit_name)
+    center_over = self._picker if (self._picker is not None
+                                   and self._picker.winfo_exists()) else None
+    editor.LevelEditor(self.root, on_saved=self._on_custom_saved,
+                       edit_name=edit_name, center_over=center_over)
 
   def _on_custom_saved(self, name, json_path):
     """After the editor saves a shape, select it as the current level."""

@@ -204,3 +204,25 @@ existieren (gilt für alle Templates).
 **Noch offen / sinnvolle Follow-ups:** manuelles Durchklicken des Editor-Fensters
 (GUI-Smoke-Test), optional 4er- statt 8er-Nachbarschaft als Editor-Option,
 README-Notiz zum Editor.
+
+## 14. Status: Sechseck-Kacheln ergänzt
+
+Der Editor kann jetzt auch **hexagonale** Level bauen (neben Quadraten):
+- **`custom_levels.py`** – `save_shape(..., shape=...)` speichert `shape`
+  (`'square'` / `'hexagon'`). Hex-Zellen liegen als axiale `(q, r)` in den
+  `x`/`y`-Feldern; das JSON-Schema bleibt unverändert (abwärtskompatibel, alte
+  Dateien sind weiter `'square'`).
+- **`templater.py`** – `custom()` verzweigt auf das `shape`-Feld. Neuer Helfer
+  `_masked_hex_grid` (6er-Nachbarschaft, Pointy-Top-Hex-Polygone, Linienhinweise
+  entlang der drei Hex-Achsen) – analog zum vorhandenen `hexagon`-Template, nur
+  über die handgezeichnete Zellmenge.
+- **`render.py`** – `custom_shape_data` zeichnet für `'hexagon'` echte Hex-Kacheln
+  (Vorschau/Thumbnails).
+- **`editor.py`** – Tile-Shape-Picker (zwei anklickbare Thumbnails Quadrat/Sechseck)
+  unten in der Palette, über dem Namensfeld. Hex-Gitter wird gezeichnet und per
+  Pixel→Hex-Rundung angeklickt; „Square tile" wird im Hex-Modus zu „Hexagon tile".
+  Formwechsel leert die aktuelle Zeichnung (andere Koordinatensysteme).
+
+**Verifiziert:** Hex-Shape → `make`/`render` (löst + bewertet, 6er-Nachbarschaft,
+12-Punkt-Hex-Polygone) → Vorschau-PNG korrekt; Editor-Smoke-Test (Bauen, Wechseln,
+Platzieren, Speichern, Wieder-Laden, Zurückwechseln).

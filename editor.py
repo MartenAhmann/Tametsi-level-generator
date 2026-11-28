@@ -104,7 +104,7 @@ class LevelEditor(tk.Toplevel):
     palette.pack(side='left', fill='y', padx=(0, 10))
 
     self._palette_entry(palette, 'Square tile', TOOL_PLACE, TILE,
-                        'Place a tile on the clicked cell.')
+                        'Place a plain tile (clears any color on the cell).')
     self._palette_entry(palette, 'Revealed start', TOOL_REVEAL, TILE_REVEALED,
                         'Mark a tile as starting revealed (right click to undo).')
 
@@ -188,9 +188,10 @@ class LevelEditor(tk.Toplevel):
     if cell is None:
       return
     if tool == TOOL_PLACE:
-      # Place an unrevealed tile; painting over a revealed one resets it. The
-      # cell keeps any color it already had (use "No color" to clear that).
+      # Place a plain, unrevealed tile: painting over a revealed or colored cell
+      # resets it to a neutral tile.
       self.cells[cell] = False
+      self.colors.pop(cell, None)
     elif tool == TOOL_ERASE:
       self.cells.pop(cell, None)
       self.colors.pop(cell, None)

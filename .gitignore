@@ -11,6 +11,9 @@ visualizer_data.js
 *.soln
 # game_puzzles: symlink into the local Tametsi install
 game_puzzles
+# custom/: level-editor shapes (per-user) and their generated preview thumbnails
+custom/*.json
+custom/*.png
 
 # Claude Code: assistant-specific / local files (kept out of the repo)
 CLAUDE.md

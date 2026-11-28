@@ -18,7 +18,7 @@ thumbnail is best-effort and simply skipped if the renderer is unavailable.
 import os
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 
 import custom_levels
 
@@ -239,15 +239,74 @@ class LevelEditor(tk.Toplevel):
               foreground='#888', wraplength=160, justify='left').pack(
                 anchor='w', pady=(4, 0))
 
+  # -- Dialogs ----------------------------------------------------------------
+
+  def _modal(self, title, message, buttons, default_index=0):
+    """A small modal dialog centered over the editor (not the screen).
+
+    The native tk message boxes ignore the parent position on some systems and
+    pop up at the monitor center, so we draw our own and place it over the editor
+    with the usual withdraw -> compute-from-parent -> deiconify dance. `buttons`
+    is a list of (label, value); returns the chosen value (the last button's
+    value if the window is just closed). Coordinates are not clamped to >= 0, so
+    a secondary monitor at negative coordinates still works."""
+    result = {'value': buttons[-1][1]}
+    dlg = tk.Toplevel(self)
+    dlg.withdraw()
+    dlg.title(title)
+    dlg.transient(self)
+    dlg.resizable(False, False)
+
+    frame = ttk.Frame(dlg, padding=16)
+    frame.pack(fill='both', expand=True)
+    ttk.Label(frame, text=message, wraplength=320, justify='left').pack(
+      anchor='w', pady=(0, 14))
+    btn_row = ttk.Frame(frame)
+    btn_row.pack(anchor='e')
+
+    def choose(value):
+      result['value'] = value
+      dlg.destroy()
+
+    widgets = []
+    for label, value in buttons:
+      button = ttk.Button(btn_row, text=label, command=lambda v=value: choose(v))
+      button.pack(side='left', padx=(8, 0))
+      widgets.append(button)
+
+    dlg.protocol('WM_DELETE_WINDOW', lambda: choose(buttons[-1][1]))
+    dlg.bind('<Return>', lambda _e: choose(buttons[default_index][1]))
+    dlg.bind('<Escape>', lambda _e: choose(buttons[-1][1]))
+
+    dlg.update_idletasks()
+    self.update_idletasks()  # make sure the editor's own geometry is current
+    width = dlg.winfo_reqwidth()
+    height = dlg.winfo_reqheight()
+    px = self.winfo_rootx() + (self.winfo_width() - width) // 2
+    py = self.winfo_rooty() + (self.winfo_height() - height) // 2
+    dlg.geometry(f'{width}x{height}+{px}+{py}')
+    dlg.deiconify()
+    dlg.grab_set()
+    widgets[default_index].focus_set()
+    self.wait_window(dlg)
+    return result['value']
+
+  def _ask_yes_no(self, title, message):
+    """Modal Yes/No question centered over the editor; returns True/False."""
+    return self._modal(title, message, [('Yes', True), ('No', False)])
+
+  def _show_message(self, title, message):
+    """Modal information/error dialog centered over the editor."""
+    self._modal(title, message, [('OK', None)])
+
   # -- Tile-shape switching ---------------------------------------------------
 
   def _set_shape(self, kind):
     if kind == self.shape_type:
       return
-    if self.cells and not messagebox.askyesno(
+    if self.cells and not self._ask_yes_no(
         'Switch tile shape',
-        'Switching the tile shape clears the current drawing. Continue?',
-        parent=self):
+        'Switching the tile shape clears the current drawing. Continue?'):
       return
     self.shape_type = kind
     self.cells.clear()
@@ -479,7 +538,7 @@ class LevelEditor(tk.Toplevel):
     try:
       data = custom_levels.load_shape(custom_levels.shape_path(name))
     except (OSError, ValueError) as error:
-      messagebox.showerror('Load failed', str(error), parent=self)
+      self._show_message('Load failed', str(error))
       return
     kind = data.get('shape', custom_levels.SHAPE_SQUARE)
     if kind not in custom_levels.SHAPES:
@@ -545,7 +604,7 @@ class LevelEditor(tk.Toplevel):
     return 0
 
   def _on_clear(self):
-    if self.cells and not messagebox.askyesno('Clear', 'Remove all tiles?', parent=self):
+    if self.cells and not self._ask_yes_no('Clear', 'Remove all tiles?'):
       return
     self.cells.clear()
     self.colors.clear()
@@ -556,25 +615,26 @@ class LevelEditor(tk.Toplevel):
   def _on_save(self):
     name = self.name_var.get().strip()
     if not custom_levels.is_valid_name(name):
-      messagebox.showerror('Invalid name', 'Please enter a valid level name '
-                           '(no \\ / : * ? " < > |).', parent=self)
+      self._show_message(
+        'Invalid name',
+        'Please enter a valid level name (no \\ / : * ? " < > |).')
       return
     if not self.cells:
-      messagebox.showerror('Empty level', 'Place at least one tile first.', parent=self)
+      self._show_message('Empty level', 'Place at least one tile first.')
       return
     if all(self.cells.values()):
-      messagebox.showerror(
+      self._show_message(
         'All revealed',
         'At least one tile must stay unrevealed - the generator needs somewhere '
-        'to place mines.', parent=self)
+        'to place mines.')
       return
     # Saving under the same name we are editing just updates it; any other
     # existing name prompts before overwriting a different shape.
     if (name != self.edit_name
         and os.path.isfile(custom_levels.shape_path(name))
-        and not messagebox.askyesno(
-          'Overwrite', f'A custom level named "{name}" already exists. Overwrite it?',
-          parent=self)):
+        and not self._ask_yes_no(
+          'Overwrite',
+          f'A custom level named "{name}" already exists. Overwrite it?')):
       return
 
     cells = [(x, y, revealed, self.colors.get((x, y)))
@@ -582,14 +642,14 @@ class LevelEditor(tk.Toplevel):
     try:
       path = custom_levels.save_shape(name, cells, shape=self.shape_type)
     except (OSError, ValueError) as error:
-      messagebox.showerror('Save failed', str(error), parent=self)
+      self._show_message('Save failed', str(error))
       return
 
     self._save_thumbnail(name, path)
 
     if self.on_saved:
       self.on_saved(name, path)
-    messagebox.showinfo('Saved', f'Custom level "{name}" saved.', parent=self)
+    self._show_message('Saved', f'Custom level "{name}" saved.')
     self.destroy()
 
   @staticmethod

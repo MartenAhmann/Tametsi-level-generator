@@ -1055,7 +1055,24 @@ def custom(compressed, filename):
     lambda x, y: (x, y) in keep_set, side, tile_size)
   num = len(id_of)
   revealed = sorted(id_of[coord] for coord in rev_set)
+
+  # Color hints: group the editor's painted cells by color name, then turn each
+  # group into a color region plus a placeholder count constraint. replace_cells
+  # recomputes the real mine count once a layout is filled in, so the 0 here is
+  # just a placeholder (exactly like the other colored templates above).
+  color_groups = {}
+  for cell in shape['cells']:
+    name = cell.get('color')
+    if not name:
+      continue
+    coord = (cell['x'] - min_x, cell['y'] - min_y)
+    if coord in id_of:
+      color_groups.setdefault(str(name).upper(), []).append(id_of[coord])
   colors = []
+  for name in sorted(color_groups):
+    ids = sorted(color_groups[name])
+    constraints.append([0, ids])
+    colors.append(dict(ids=ids, color=name, is_dark=False))
 
   constraints.append([0, list(range(num))])  # total
 

@@ -51,19 +51,29 @@ def is_valid_name(name):
 def save_shape(name, cells, tile_size=DEFAULT_TILE_SIZE):
   """Write a custom shape to CUSTOM_DIR/<name>.json and return its path.
 
-  `cells` is an iterable of (x, y, revealed) triples (grid coordinates and a
-  boolean). Coordinates are stored as given; the template normalises them to the
-  origin when it builds the board, so the absolute offset does not matter.
+  `cells` is an iterable of (x, y, revealed[, color]) tuples: grid coordinates, a
+  boolean, and an optional Tametsi color NAME (e.g. 'GREEN') or None for an
+  unpainted tile. Coordinates are stored as given; the template normalises them
+  to the origin when it builds the board, so the absolute offset does not matter.
+  The `color` field is optional, so files written without it stay readable by
+  older loaders (the schema version is unchanged).
   """
   if not is_valid_name(name):
     raise ValueError(f'invalid custom level name: {name!r}')
 
   os.makedirs(CUSTOM_DIR, exist_ok=True)
+  out_cells = []
+  for cell in cells:
+    x, y, revealed = cell[0], cell[1], cell[2]
+    color = cell[3] if len(cell) > 3 else None
+    out_cells.append(dict(
+      x=int(x), y=int(y), revealed=bool(revealed),
+      color=(str(color) if color else None)))
   data = dict(
     version=SCHEMA_VERSION,
     shape='square',  # extension point: future tile shapes (hexagon, triangle, ...)
     tile_size=int(tile_size),
-    cells=[dict(x=int(x), y=int(y), revealed=bool(revealed)) for x, y, revealed in cells],
+    cells=out_cells,
   )
   path = shape_path(name)
   with open(path, 'w', encoding='utf-8') as file:
@@ -78,10 +88,13 @@ def load_shape(path):
 
   cells = []
   for cell in data.get('cells', []):
+    # `color` is optional and absent in older files, so default it to None.
+    color = cell.get('color')
     cells.append(dict(
       x=int(cell['x']),
       y=int(cell['y']),
       revealed=bool(cell.get('revealed', False)),
+      color=(str(color) if color else None),
     ))
 
   return dict(

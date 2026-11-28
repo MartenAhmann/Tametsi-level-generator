@@ -29,10 +29,27 @@ GRID_LINE = '#343a46'
 TILE = '#7D7D7D'
 TILE_REVEALED = '#333333'
 
+# Tametsi's color-hint hues, as (name, hex). These mirror render.py's COLOR_MAP
+# (kept here as hex strings so the editor needs no Pillow just to show swatches).
+COLOR_HEXES = [
+  ('RED', '#d64545'),
+  ('ORANGE', '#e08a2e'),
+  ('YELLOW', '#e3c53a'),
+  ('GREEN', '#4fa65b'),
+  ('BLUE', '#4a78d6'),
+  ('INDIGO', '#3f4fa0'),
+  ('VIOLET', '#8a4fd0'),
+  ('PINK', '#d873b0'),
+]
+COLOR_HEX = dict(COLOR_HEXES)
+
 # Palette tools ("blocks").
 TOOL_PLACE = 'place'
 TOOL_REVEAL = 'reveal'
 TOOL_ERASE = 'erase'
+TOOL_NOCOLOR = 'nocolor'
+# Color tools are 'color:<NAME>' so one StringVar can hold every palette choice.
+COLOR_TOOL_PREFIX = 'color:'
 
 
 class LevelEditor(tk.Toplevel):
@@ -45,6 +62,8 @@ class LevelEditor(tk.Toplevel):
 
     # (x, y) -> revealed(bool) for every placed cell.
     self.cells = {}
+    # (x, y) -> color NAME, for the subset of placed cells that are painted.
+    self.colors = {}
     self.tool = tk.StringVar(value=TOOL_PLACE)
     self.name_var = tk.StringVar(value='')
     self.status_var = tk.StringVar(value='')
@@ -89,6 +108,20 @@ class LevelEditor(tk.Toplevel):
     self._palette_entry(palette, 'Revealed start', TOOL_REVEAL, TILE_REVEALED,
                         'Mark a tile as starting revealed (right click to undo).')
 
+    ttk.Separator(palette, orient='horizontal').pack(fill='x', pady=6)
+    ttk.Label(palette, text='Colors').pack(anchor='w')
+    grid = ttk.Frame(palette)
+    grid.pack(fill='x', pady=(2, 0))
+    for index, (name, hexcolor) in enumerate(COLOR_HEXES):
+      self._color_entry(grid, name, hexcolor, index)
+    # "No color" clears a tile's paint without removing the tile itself.
+    self._color_entry(grid, 'No color', None, len(COLOR_HEXES), tool=TOOL_NOCOLOR)
+    ttk.Label(palette,
+              text='Paint a color on a tile (places one if the cell is empty). '
+                   'Each color becomes a color hint in the generated puzzle.',
+              foreground='#888', wraplength=160, justify='left').pack(
+                anchor='w', pady=(6, 0))
+
     # Grid canvas on the right.
     canvas_wrap = ttk.Frame(body)
     canvas_wrap.pack(side='left', fill='both', expand=True)
@@ -127,6 +160,21 @@ class LevelEditor(tk.Toplevel):
     ttk.Label(parent, text=hint, foreground='#888', wraplength=150,
               justify='left').pack(anchor='w', pady=(0, 4))
 
+  def _color_entry(self, parent, label, hexcolor, index, tool=None):
+    """A compact swatch + radiobutton for a color (or the 'No color' clearer).
+
+    Laid out in a two-column grid to keep the palette short. `tool` overrides the
+    bound value (used for 'No color'); otherwise the value is 'color:<NAME>'.
+    """
+    value = tool if tool is not None else COLOR_TOOL_PREFIX + label
+    row = ttk.Frame(parent)
+    row.grid(row=index // 2, column=index % 2, sticky='w', padx=2, pady=1)
+    swatch = tk.Canvas(row, width=16, height=16, highlightthickness=1,
+                       highlightbackground=GRID_LINE, background=BG)
+    swatch.create_rectangle(2, 2, 14, 14, fill=hexcolor or TILE, outline=GRID_LINE)
+    swatch.pack(side='left', padx=(0, 4))
+    ttk.Radiobutton(row, text=label, value=value, variable=self.tool).pack(side='left')
+
   # -- Grid interaction -------------------------------------------------------
 
   def _cell_at(self, event):
@@ -140,15 +188,25 @@ class LevelEditor(tk.Toplevel):
     if cell is None:
       return
     if tool == TOOL_PLACE:
-      # Place an unrevealed tile; painting over a revealed one resets it.
+      # Place an unrevealed tile; painting over a revealed one resets it. The
+      # cell keeps any color it already had (use "No color" to clear that).
       self.cells[cell] = False
     elif tool == TOOL_ERASE:
       self.cells.pop(cell, None)
+      self.colors.pop(cell, None)
     elif tool == TOOL_REVEAL:
       # Reveal only ever marks a tile revealed; it never un-reveals, so clicking
       # an already-revealed tile (or dragging over one) leaves it revealed.
       if cell in self.cells:
         self.cells[cell] = True
+    elif tool == TOOL_NOCOLOR:
+      # Strip the paint but leave the tile in place.
+      self.colors.pop(cell, None)
+    elif tool.startswith(COLOR_TOOL_PREFIX):
+      # Painting a color places a tile first if the cell is empty, then tints it.
+      if cell not in self.cells:
+        self.cells[cell] = False
+      self.colors[cell] = tool[len(COLOR_TOOL_PREFIX):]
     self._redraw()
     self._update_status()
 
@@ -178,14 +236,26 @@ class LevelEditor(tk.Toplevel):
     for (x, y), revealed in self.cells.items():
       x0, y0 = x * CELL_PX + 1, y * CELL_PX + 1
       x1, y1 = x0 + CELL_PX - 2, y0 + CELL_PX - 2
-      self.canvas.create_rectangle(
-        x0, y0, x1, y1,
-        fill=TILE_REVEALED if revealed else TILE, outline=BG, width=1)
+      color = self.colors.get((x, y))
+      if revealed:
+        fill = TILE_REVEALED
+      elif color:
+        fill = COLOR_HEX.get(color, TILE)
+      else:
+        fill = TILE
+      # A revealed tile stays dimmed (as it renders in the game); when it is also
+      # painted, a colored border keeps its color group visible.
+      if revealed and color:
+        self.canvas.create_rectangle(
+          x0, y0, x1, y1, fill=fill, outline=COLOR_HEX.get(color, BG), width=2)
+      else:
+        self.canvas.create_rectangle(x0, y0, x1, y1, fill=fill, outline=BG, width=1)
 
   def _update_status(self):
     total = len(self.cells)
     revealed = sum(1 for r in self.cells.values() if r)
-    self.status_var.set(f'{total} tiles, {revealed} revealed')
+    colored = len(self.colors)
+    self.status_var.set(f'{total} tiles, {revealed} revealed, {colored} colored')
 
   # -- Actions ----------------------------------------------------------------
 
@@ -205,6 +275,9 @@ class LevelEditor(tk.Toplevel):
     dy = self._fit_offset(ys, GRID_ROWS)
     self.cells = {
       (c['x'] + dx, c['y'] + dy): bool(c['revealed']) for c in cells
+    }
+    self.colors = {
+      (c['x'] + dx, c['y'] + dy): c['color'] for c in cells if c.get('color')
     }
     self.name_var.set(name)
     self.title(f'Level Editor - {name}')
@@ -228,6 +301,7 @@ class LevelEditor(tk.Toplevel):
     if self.cells and not messagebox.askyesno('Clear', 'Remove all tiles?', parent=self):
       return
     self.cells.clear()
+    self.colors.clear()
     self._last_cell = None
     self._redraw()
     self._update_status()
@@ -256,7 +330,8 @@ class LevelEditor(tk.Toplevel):
           parent=self)):
       return
 
-    cells = [(x, y, revealed) for (x, y), revealed in self.cells.items()]
+    cells = [(x, y, revealed, self.colors.get((x, y)))
+             for (x, y), revealed in self.cells.items()]
     try:
       path = custom_levels.save_shape(name, cells)
     except (OSError, ValueError) as error:

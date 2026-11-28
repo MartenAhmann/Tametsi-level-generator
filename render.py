@@ -22,6 +22,7 @@ import sys
 from PIL import Image, ImageDraw
 
 from loader import extract
+import custom_levels
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_DIR = os.path.join(BASE_DIR, 'test')
@@ -158,6 +159,53 @@ def render_file(puz_path, out_path=None, px=512):
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     img.save(out_path)
   return img
+
+
+def custom_shape_data(shape):
+  """Build render-data (nodes + empty colors) for a custom editor shape dict.
+
+  Draws the square tiles only - no solver, no mines - so it is fast enough for
+  live previews while editing. Revealed cells get the dimmed fill (like the
+  bonus-level renders), everything else the neutral fill. `shape` is a dict as
+  returned by custom_levels.load_shape().
+  """
+  tile_size = shape.get('tile_size', custom_levels.DEFAULT_TILE_SIZE)
+  cells = [(c['x'], c['y'], c.get('revealed', False)) for c in shape['cells']]
+  if not cells:
+    return dict(nodes=[], colors=[])
+
+  min_x = min(x for x, _y, _r in cells)
+  min_y = min(y for _x, y, _r in cells)
+  half = 0.96 * tile_size / 2
+  points = '-{s},-{s},{s},-{s},{s},{s},-{s},{s}'.format(s=half)
+
+  nodes = []
+  for index, (x, y, revealed) in enumerate(cells):
+    nodes.append(dict(
+      id=index,
+      neighbors=[],
+      position=((x - min_x) * tile_size, (y - min_y) * tile_size),
+      points=points,
+      revealed=revealed,
+    ))
+  return dict(nodes=nodes, colors=[])
+
+
+def render_custom(json_path, px=512):
+  """Render a saved custom shape file to a square PIL.Image of side `px`."""
+  return render_data(custom_shape_data(custom_levels.load_shape(json_path)), px=px)
+
+
+def ensure_custom_render(name, json_path, px=512):
+  """Return the cached preview PNG path for a custom shape, rendering if stale."""
+  out = custom_levels.render_path_for(name)
+  try:
+    fresh = os.path.isfile(out) and os.path.getmtime(out) >= os.path.getmtime(json_path)
+  except OSError:
+    fresh = False
+  if not fresh:
+    render_custom(json_path, px=px).save(out)
+  return out
 
 
 def list_test_puzzles():

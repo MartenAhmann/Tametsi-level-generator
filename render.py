@@ -29,6 +29,28 @@ BONUS_DIR = os.path.join(BASE_DIR, 'Tametsi Bonus puzzles')
 RENDER_DIR = os.path.join(BASE_DIR, 'Tametsi Bonus Puzzle Images')
 TEMPLATE_IMG_DIR = os.path.join(BASE_DIR, 'Template Images')
 
+# Display order for the bonus levels in the GUI picker, by file stem (the .puz
+# name without extension). Any bonus file not listed here is appended after
+# these, sorted alphabetically.
+BONUS_ORDER = [
+  'Jellyfish', 'Squiddy', 'Stingray',
+  'TMI_ Green', 'TMI_ Red', 'TMI_ Blue',
+  'Girih I', 'Girih II', 'Girih III',
+  'Daisy Chain', 'Blue Chips', 'D20',
+  'Lattice I', 'Lattice II', 'Lattice III',
+  'Tabs', 'Cyclone', 'Tatters',
+  'Combination Lock IV', 'Combination Lock V', 'Combination Lock VI',
+  'Hex Ring III', 'Tangle', 'Dither', 'Waffle', 'Windmill II', 'Warp Zone',
+  'Circuit I', 'Circuit II', 'Circuit III',
+  'Stacks', 'Diverging Roads', 'Reticle', 'No-Ambition Clock',
+  'Action Link Combo', 'Click Boom Nation', 'Triad', 'Waves', 'Fingerprint',
+  'Parcel', 'Not a Knot', 'Menger Sponge', 'Saddle', 'Unsafe Crossing',
+  "Tubes' Revenge", 'Binary Star', 'Reactor Core', 'Solar Flair',
+  'Slings and Arrows', 'Stitches', 'Alas', 'Spur', 'Wrong Triangle',
+  'Apologies to Mondrian', 'Propeller', 'Capacity', 'Interlocked',
+  'Satellite', 'Mandala', 'Weave',
+]
+
 # Background and tile colors (roughly matching Tametsi's palette).
 BACKGROUND = (30, 30, 40)
 NEUTRAL_TILE = (90, 101, 117)
@@ -151,11 +173,17 @@ def list_bonus_puzzles():
 
   These are the curated 'Tametsi Bonus puzzles'. Their pre-rendered PNGs live in
   RENDER_DIR ('Tametsi Bonus Puzzle Images'), i.e. render_path_for(name).
+
+  Ordered by BONUS_ORDER; any file not listed there is appended afterwards,
+  sorted alphabetically.
   """
   if not os.path.isdir(BONUS_DIR):
     return []
-  names = [f for f in os.listdir(BONUS_DIR) if f.lower().endswith('.puz')]
-  return [(os.path.splitext(f)[0], os.path.join(BONUS_DIR, f)) for f in sorted(names)]
+  names = [os.path.splitext(f)[0] for f in os.listdir(BONUS_DIR)
+           if f.lower().endswith('.puz')]
+  rank = {name: i for i, name in enumerate(BONUS_ORDER)}
+  names.sort(key=lambda n: (rank.get(n, len(rank)), n))
+  return [(n, os.path.join(BONUS_DIR, n + '.puz')) for n in names]
 
 
 def render_path_for(name):

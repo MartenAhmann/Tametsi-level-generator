@@ -1,5 +1,5 @@
-' Doppelklick-Starter fuer die Tametsi-GUI.
-' Startet gui.py mit pythonw (ohne Konsolenfenster) im Ordner dieser Datei.
+' Double-click launcher for the Tametsi GUI.
+' Starts gui.py with pythonw (no console window) in this file's folder.
 Option Explicit
 
 Dim shell, fso, scriptDir, pyexe, target
@@ -11,12 +11,12 @@ scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 target = scriptDir & "\gui.py"
 
 If Not fso.FileExists(target) Then
-  MsgBox "gui.py wurde nicht gefunden neben dieser Datei:" & vbCrLf & target, _
+  MsgBox "gui.py was not found next to this file:" & vbCrLf & target, _
          vbCritical, "Tametsi Level Generator"
   WScript.Quit 1
 End If
 
-' pythonw.exe (kein Konsolenfenster); faellt auf den py-Launcher pyw.exe zurueck.
+' pythonw.exe (no console window); falls back to the py launcher pyw.exe.
 pyexe = "pythonw.exe"
 
 shell.CurrentDirectory = scriptDir
@@ -27,8 +27,8 @@ If Err.Number <> 0 Then
   Err.Clear
   shell.Run "pyw.exe """ & target & """", 0, False
   If Err.Number <> 0 Then
-    MsgBox "Python (pythonw) konnte nicht gestartet werden." & vbCrLf & _
-           "Bitte Python installieren oder zum PATH hinzufuegen.", _
+    MsgBox "Python (pythonw) could not be started." & vbCrLf & _
+           "Please install Python or add it to PATH.", _
            vbCritical, "Tametsi Level Generator"
   End If
 End If

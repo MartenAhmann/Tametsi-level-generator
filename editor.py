@@ -24,10 +24,10 @@ GRID_ROWS = 18
 CELL_PX = 28
 
 # Colors, roughly matching render.py's board palette.
-BG = '#1e1e28'
+BG = '#140023'
 GRID_LINE = '#343a46'
-TILE = '#5a6575'
-TILE_REVEALED = '#2a2f3a'
+TILE = '#7D7D7D'
+TILE_REVEALED = '#333333'
 
 # Palette tools ("blocks").
 TOOL_PLACE = 'place'
@@ -66,8 +66,8 @@ class LevelEditor(tk.Toplevel):
 
     ttk.Label(
       root,
-      text='Build a board shape: pick a block on the left, then click or drag on '
-           'the grid. Only the shape is saved - the generator adds the mines.',
+      text='Left click to place / right click to erase. Only the shape is saved, '
+           'the generator adds the mines.',
       wraplength=GRID_COLS * CELL_PX, justify='left',
     ).pack(anchor='w', pady=(0, 8))
 

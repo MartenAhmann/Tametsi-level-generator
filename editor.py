@@ -38,7 +38,7 @@ TOOL_ERASE = 'erase'
 class LevelEditor(tk.Toplevel):
   """A window to build and save one custom board shape."""
 
-  def __init__(self, master, on_saved=None):
+  def __init__(self, master, on_saved=None, edit_name=None):
     super().__init__(master)
     self.title('Level Editor')
     self.on_saved = on_saved  # called as on_saved(name, json_path) after a save
@@ -49,9 +49,15 @@ class LevelEditor(tk.Toplevel):
     self.name_var = tk.StringVar(value='')
     self.status_var = tk.StringVar(value='')
 
+    # Name of the shape being edited (if any). When the user saves under this
+    # same name we overwrite silently; a different name saves a fresh shape.
+    self.edit_name = edit_name
+
     self._last_cell = None  # for drag handling
 
     self._build()
+    if edit_name is not None:
+      self._load_for_edit(edit_name)
     self._redraw()
     self._update_status()
 
@@ -81,9 +87,7 @@ class LevelEditor(tk.Toplevel):
     self._palette_entry(palette, 'Square tile', TOOL_PLACE, TILE,
                         'Place a tile on the clicked cell.')
     self._palette_entry(palette, 'Revealed start', TOOL_REVEAL, TILE_REVEALED,
-                        'Mark a tile as starting revealed (erase to undo).')
-    self._palette_entry(palette, 'Erase', TOOL_ERASE, BG,
-                        'Remove the tile from the clicked cell.')
+                        'Mark a tile as starting revealed (right click to undo).')
 
     # Grid canvas on the right.
     canvas_wrap = ttk.Frame(body)
@@ -185,6 +189,41 @@ class LevelEditor(tk.Toplevel):
 
   # -- Actions ----------------------------------------------------------------
 
+  def _load_for_edit(self, name):
+    """Preload an existing custom shape so it can be edited and re-saved."""
+    try:
+      data = custom_levels.load_shape(custom_levels.shape_path(name))
+    except (OSError, ValueError) as error:
+      messagebox.showerror('Load failed', str(error), parent=self)
+      return
+    cells = data.get('cells', [])
+    # Keep the shape where it was drawn. Only shift it (as little as possible)
+    # if it would otherwise fall outside the editor grid.
+    xs = [c['x'] for c in cells]
+    ys = [c['y'] for c in cells]
+    dx = self._fit_offset(xs, GRID_COLS)
+    dy = self._fit_offset(ys, GRID_ROWS)
+    self.cells = {
+      (c['x'] + dx, c['y'] + dy): bool(c['revealed']) for c in cells
+    }
+    self.name_var.set(name)
+    self.title(f'Level Editor - {name}')
+
+  @staticmethod
+  def _fit_offset(coords, limit):
+    """Offset to add to `coords` so they all fall within 0..limit-1.
+
+    Returns 0 when the coordinates already fit (keeping the original position);
+    otherwise the smallest shift that brings them back on-grid."""
+    if not coords:
+      return 0
+    lo, hi = min(coords), max(coords)
+    if lo < 0:
+      return -lo
+    if hi > limit - 1:
+      return -(hi - (limit - 1))
+    return 0
+
   def _on_clear(self):
     if self.cells and not messagebox.askyesno('Clear', 'Remove all tiles?', parent=self):
       return
@@ -208,9 +247,13 @@ class LevelEditor(tk.Toplevel):
         'At least one tile must stay unrevealed - the generator needs somewhere '
         'to place mines.', parent=self)
       return
-    if os.path.isfile(custom_levels.shape_path(name)) and not messagebox.askyesno(
-        'Overwrite', f'A custom level named "{name}" already exists. Overwrite it?',
-        parent=self):
+    # Saving under the same name we are editing just updates it; any other
+    # existing name prompts before overwriting a different shape.
+    if (name != self.edit_name
+        and os.path.isfile(custom_levels.shape_path(name))
+        and not messagebox.askyesno(
+          'Overwrite', f'A custom level named "{name}" already exists. Overwrite it?',
+          parent=self)):
       return
 
     cells = [(x, y, revealed) for (x, y), revealed in self.cells.items()]

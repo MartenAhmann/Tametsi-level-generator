@@ -18,6 +18,14 @@ CUSTOM_DIR = os.path.join(BASE_DIR, 'custom')
 SCHEMA_VERSION = 1
 DEFAULT_TILE_SIZE = 10
 
+# Names Windows refuses as files, even with an extension: open('CON.json', 'w')
+# targets the console device, so a shape named this way would never persist.
+_RESERVED_NAMES = (
+  {'CON', 'PRN', 'AUX', 'NUL'}
+  | {f'COM{d}' for d in range(1, 10)}
+  | {f'LPT{d}' for d in range(1, 10)}
+)
+
 
 def shape_path(name):
   """Path of the JSON file for a custom shape called `name`."""
@@ -34,7 +42,10 @@ def is_valid_name(name):
   name = (name or '').strip()
   if not name or name in ('.', '..'):
     return False
-  return not any(ch in name for ch in '\\/:*?"<>|')
+  if any(ch in name for ch in '\\/:*?"<>|'):
+    return False
+  # Reject Windows reserved device names (checked against the part before any dot).
+  return name.split('.')[0].upper() not in _RESERVED_NAMES
 
 
 def save_shape(name, cells, tile_size=DEFAULT_TILE_SIZE):

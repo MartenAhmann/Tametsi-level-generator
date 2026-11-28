@@ -28,7 +28,6 @@ BG = '#1e1e28'
 GRID_LINE = '#343a46'
 TILE = '#5a6575'
 TILE_REVEALED = '#2a2f3a'
-HOVER = '#8a94a6'
 
 # Palette tools ("blocks").
 TOOL_PLACE = 'place'

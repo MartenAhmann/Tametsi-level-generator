@@ -562,6 +562,11 @@ class App:
     # so the first shape lines up under the heading like the other sections do.
     row = self._picker_header(frame, row, 'Custom', columns,
                               button=('➕ Open level editor…', self.open_editor))
+    if custom_levels.list_shapes():
+      ttk.Label(frame, text='Tip: right-click a custom shape to edit or delete it.',
+                foreground='#888').grid(
+        row=row, column=0, columnspan=columns, sticky='w', padx=4, pady=(0, 2))
+      row += 1
     custom_cells = []
     for name, json_path in custom_levels.list_shapes():
       thumb = None
@@ -571,7 +576,8 @@ class App:
         except Exception:  # noqa: BLE001 - a bad shape just shows without a thumbnail
           thumb = None
       custom_cells.append(
-        (name, thumb, lambda n=name, p=json_path: self.select_custom(n, p)))
+        (name, thumb, lambda n=name, p=json_path: self.select_custom(n, p),
+         lambda e, n=name: self._custom_context_menu(e, n)))
     row = self._picker_cells(frame, row, custom_cells, columns)
 
     ttk.Separator(frame, orient='horizontal').grid(
@@ -641,8 +647,14 @@ class App:
     return row + 1
 
   def _picker_cells(self, frame, start_row, cells, columns):
-    """Grid (label, photo, callback) cells; return the next free row."""
-    for index, (label, photo, callback) in enumerate(cells):
+    """Grid picker cells; return the next free row.
+
+    Each cell is (label, photo, callback) or, optionally, a 4th element
+    on_right(event) - a right-click handler (used by Custom shapes for their
+    Edit/Delete context menu)."""
+    for index, cell_spec in enumerate(cells):
+      label, photo, callback = cell_spec[:3]
+      on_right = cell_spec[3] if len(cell_spec) > 3 else None
       cell = ttk.Frame(frame, padding=4)
       cell.grid(row=start_row + index // columns, column=index % columns,
                 sticky='n', padx=4, pady=6)
@@ -656,6 +668,8 @@ class App:
 
       for widget in (img_label, text_label):
         widget.bind('<Button-1>', lambda _e, cb=callback: cb())
+        if on_right is not None:
+          widget.bind('<Button-3>', on_right)
 
     rows = (len(cells) + columns - 1) // columns
     return start_row + rows
@@ -678,15 +692,54 @@ class App:
     self.update_hint()
     self._close_picker()
 
-  def open_editor(self):
-    """Open the level editor in its own window. Used by the picker's Custom button."""
+  def _custom_context_menu(self, event, name):
+    """Right-click on a Custom shape: offer Edit (reopen in the editor) or Delete."""
+    menu = tk.Menu(self._picker or self.root, tearoff=0)
+    menu.add_command(label='Edit…', command=lambda: self.edit_custom(name))
+    menu.add_command(label='Delete', command=lambda: self.delete_custom(name))
+    try:
+      menu.tk_popup(event.x_root, event.y_root)
+    finally:
+      menu.grab_release()
+
+  def edit_custom(self, name):
+    """Reopen a saved custom shape in the level editor to keep working on it."""
+    self.open_editor(edit_name=name)
+
+  def delete_custom(self, name):
+    """Delete a saved custom shape (with confirmation) and refresh the picker."""
+    if not messagebox.askyesno(
+        'Delete custom shape',
+        f'Delete the custom shape "{name}"? This cannot be undone.',
+        parent=self._picker or self.root):
+      return
+    try:
+      custom_levels.delete_shape(name)
+    except (OSError, ValueError) as error:
+      messagebox.showerror('Delete failed', str(error),
+                           parent=self._picker or self.root)
+      return
+    self._thumb_cache.pop(custom_levels.render_path_for(name), None)
+    # If the deleted shape was the current selection, clear it.
+    template = self.template_var.get()
+    if template == 'custom' and os.path.abspath(self.file_var.get()) == \
+        os.path.abspath(custom_levels.shape_path(name)):
+      self.file_var.set('')
+      self.update_hint()
+    # Rebuild the picker so the removed shape disappears from the gallery.
+    self._close_picker()
+    self.open_picker()
+
+  def open_editor(self, edit_name=None):
+    """Open the level editor in its own window. Used by the picker's Custom button
+    and by the Edit entry of a custom shape's right-click menu (edit_name set)."""
     self._close_picker()
     try:
       import editor
     except Exception as error:  # noqa: BLE001 - surface an import problem in the window
       messagebox.showerror('Editor unavailable', str(error))
       return
-    editor.LevelEditor(self.root, on_saved=self._on_custom_saved)
+    editor.LevelEditor(self.root, on_saved=self._on_custom_saved, edit_name=edit_name)
 
   def _on_custom_saved(self, name, json_path):
     """After the editor saves a shape, select it as the current level."""

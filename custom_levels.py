@@ -92,6 +92,25 @@ def load_shape(path):
   )
 
 
+def delete_shape(name):
+  """Remove a custom shape's JSON file and its cached preview PNG, if present.
+
+  Returns True if a shape file was actually removed. Missing files are ignored,
+  so deleting an already-gone shape is a no-op rather than an error.
+  """
+  if not is_valid_name(name):
+    raise ValueError(f'invalid custom level name: {name!r}')
+  removed = False
+  for path in (shape_path(name), render_path_for(name)):
+    try:
+      os.remove(path)
+      if path == shape_path(name):
+        removed = True
+    except FileNotFoundError:
+      pass
+  return removed
+
+
 def list_shapes():
   """Sorted list of (name, json_path) for every custom shape in CUSTOM_DIR."""
   if not os.path.isdir(CUSTOM_DIR):

@@ -162,33 +162,52 @@ def render_file(puz_path, out_path=None, px=512):
 
 
 def custom_shape_data(shape):
-  """Build render-data (nodes + empty colors) for a custom editor shape dict.
+  """Build render-data (nodes + color hints) for a custom editor shape dict.
 
   Draws the square tiles only - no solver, no mines - so it is fast enough for
   live previews while editing. Revealed cells get the dimmed fill (like the
-  bonus-level renders), everything else the neutral fill. `shape` is a dict as
-  returned by custom_levels.load_shape().
+  bonus-level renders), painted cells their color's fill, everything else the
+  neutral fill. `shape` is a dict as returned by custom_levels.load_shape().
   """
   tile_size = shape.get('tile_size', custom_levels.DEFAULT_TILE_SIZE)
-  cells = [(c['x'], c['y'], c.get('revealed', False)) for c in shape['cells']]
+  kind = shape.get('shape', 'square')
+  cells = [(c['x'], c['y'], c.get('revealed', False), c.get('color'))
+           for c in shape['cells']]
   if not cells:
     return dict(nodes=[], colors=[])
 
-  min_x = min(x for x, _y, _r in cells)
-  min_y = min(y for _x, y, _r in cells)
-  half = 0.96 * tile_size / 2
-  points = '-{s},-{s},{s},-{s},{s},{s},-{s},{s}'.format(s=half)
+  if kind == 'hexagon':
+    # Pointy-top hexagons from axial (q, r); mirrors _masked_hex_grid in
+    # templater.py (and render_data re-normalises the positions).
+    R = float(tile_size)
+    sqrt3 = 3 ** 0.5
+    s = R * 0.93
+    hxv = sqrt3 / 2 * s
+    points = '{},{},{},{},{},{},{},{},{},{},{},{}'.format(
+      0, s, -hxv, s / 2, -hxv, -s / 2, 0, -s, hxv, -s / 2, hxv, s / 2)
+    position_of = lambda q, r: (sqrt3 * R * (q + r / 2.0), 1.5 * R * r)
+  else:
+    min_x = min(x for x, _y, _r, _c in cells)
+    min_y = min(y for _x, y, _r, _c in cells)
+    half = 0.96 * tile_size / 2
+    points = '-{s},-{s},{s},-{s},{s},{s},-{s},{s}'.format(s=half)
+    position_of = lambda x, y: ((x - min_x) * tile_size, (y - min_y) * tile_size)
 
   nodes = []
-  for index, (x, y, revealed) in enumerate(cells):
+  color_groups = {}
+  for index, (x, y, revealed, color) in enumerate(cells):
     nodes.append(dict(
       id=index,
       neighbors=[],
-      position=((x - min_x) * tile_size, (y - min_y) * tile_size),
+      position=position_of(x, y),
       points=points,
       revealed=revealed,
     ))
-  return dict(nodes=nodes, colors=[])
+    if color:
+      color_groups.setdefault(str(color).upper(), []).append(index)
+  colors = [dict(ids=color_groups[name], color=name, is_dark=False)
+            for name in sorted(color_groups)]
+  return dict(nodes=nodes, colors=colors)
 
 
 def render_custom(json_path, px=512):

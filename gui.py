@@ -299,6 +299,7 @@ class App:
     self._thumb_cache = {}    # png path -> PhotoImage for the gallery (kept to avoid GC)
     self._preview_image = None
     self._picker = None       # the open gallery window, if any
+    self._editor = None       # the open level editor window, if any
 
     self._build()
     root.protocol('WM_DELETE_WINDOW', self.on_close)
@@ -547,6 +548,13 @@ class App:
     canvas.bind('<Configure>', lambda e: canvas.itemconfigure(window_id, width=e.width))
 
     def on_wheel(event):
+      # bind_all is application-wide, so without this guard the wheel would
+      # scroll the picker even while the pointer is over another window (e.g.
+      # the level editor, a separate Toplevel). Only scroll when the pointer is
+      # actually over the picker.
+      widget = win.winfo_containing(event.x_root, event.y_root)
+      if widget is None or widget.winfo_toplevel() is not win:
+        return
       canvas.yview_scroll(int(-event.delta / 120), 'units')
     canvas.bind_all('<MouseWheel>', on_wheel)
     win.bind('<Destroy>', lambda e: canvas.unbind_all('<MouseWheel>') if e.widget is win else None)
@@ -732,14 +740,32 @@ class App:
 
   def open_editor(self, edit_name=None):
     """Open the level editor in its own window. Used by the picker's Custom button
-    and by the Edit entry of a custom shape's right-click menu (edit_name set)."""
-    self._close_picker()
+    and by the Edit entry of a custom shape's right-click menu (edit_name set).
+
+    The picker stays open behind the editor so the editor can center over it. The
+    editor is still owned by the main window (not the picker), because the save
+    flow closes the picker while the editor is finishing.
+
+    Only one editor instance is allowed at a time: if one is already open (e.g.
+    the user clicks Edit again, or opens a second shape), bring that window to the
+    front instead of opening another."""
+    if self._editor is not None and self._editor.winfo_exists():
+      self._editor.deiconify()
+      self._editor.lift()
+      self._editor.focus_force()
+      return
     try:
       import editor
     except Exception as error:  # noqa: BLE001 - surface an import problem in the window
       messagebox.showerror('Editor unavailable', str(error))
       return
-    editor.LevelEditor(self.root, on_saved=self._on_custom_saved, edit_name=edit_name)
+    center_over = self._picker if (self._picker is not None
+                                   and self._picker.winfo_exists()) else None
+    win = editor.LevelEditor(self.root, on_saved=self._on_custom_saved,
+                             edit_name=edit_name, center_over=center_over)
+    self._editor = win
+    win.bind('<Destroy>',
+             lambda e, w=win: setattr(self, '_editor', None) if e.widget is w else None)
 
   def _on_custom_saved(self, name, json_path):
     """After the editor saves a shape, select it as the current level."""
